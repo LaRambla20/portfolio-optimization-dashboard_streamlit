@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+individual_indices_data/
+.streamlit/
