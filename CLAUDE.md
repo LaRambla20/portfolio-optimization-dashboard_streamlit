@@ -25,9 +25,9 @@ python -m venv .venv
 Remote: https://github.com/LaRambla20/portfolio-optimization-dashboard_streamlit.git
 Default branch: `master`
 
-**Push requires SSL bypass** (same cert issue as pip):
+**Push requires Windows native cert store** (same SSL issue as pip):
 ```bash
-git -c http.sslVerify=false push
+git -c http.sslBackend=schannel push
 ```
 
 ## Architecture
