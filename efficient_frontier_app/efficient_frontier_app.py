@@ -71,7 +71,7 @@ st.sidebar.subheader("📥 Download ETF Data")
 with st.sidebar.expander("Download settings", expanded=False):
     dl_tickers_raw = st.text_area(
         "Tickers to download (one per line)",
-        value="EM57.MI\nIMIE.MI\nSGLD.MI\nBTC-EUR",
+        value="EM57.MI\nVWCE.MI\nSGLD.MI\nBTC-EUR",
         height=120,
         help="These are the tickers passed to yfinance. They don't have to match your portfolio.",
     )
@@ -101,7 +101,7 @@ st.sidebar.markdown(
 
 default_portfolio = {
     "EM57.MI": 2900.34,
-    "IMIE.MI": 5226.69,
+    "VWCE.MI": 5226.69,
     "SGLD.MI": 1994.88,
     "BTC-EUR": 0.0,
 }

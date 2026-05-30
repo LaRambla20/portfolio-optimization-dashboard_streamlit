@@ -18,7 +18,7 @@ python -m venv .venv
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
-**Workflow:** Download ETF data first via the sidebar "Download ETF Data" panel. This creates `individual_indices_data/` and populates it with CSVs. That folder does not exist until first download — the app will show a "CSV not found" error if you click Run Analysis before downloading.
+**Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download ETF Data" panel.
 
 ## Git
 

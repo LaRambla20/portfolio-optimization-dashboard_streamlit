@@ -22,9 +22,9 @@ python -m venv .venv
 
 ## Usage
 
-1. **Download data** — expand the "Download ETF Data" panel in the sidebar, enter tickers (yfinance format, e.g. `IWDA.AS`, `BTC-EUR`), and click Download. This creates `individual_indices_data/` with CSV files.
+1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
 
-2. **Run analysis** — configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
+2. **Add or refresh tickers** — expand the "Download ETF Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download.
 
 ```bash
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
