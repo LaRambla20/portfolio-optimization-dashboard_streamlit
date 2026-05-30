@@ -20,6 +20,16 @@ python -m venv .venv
 
 **Workflow:** Download ETF data first via the sidebar "Download ETF Data" panel. This creates `individual_indices_data/` and populates it with CSVs. That folder does not exist until first download — the app will show a "CSV not found" error if you click Run Analysis before downloading.
 
+## Git
+
+Remote: https://github.com/LaRambla20/portfolio-optimization-dashboard_streamlit.git
+Default branch: `master`
+
+**Push requires SSL bypass** (same cert issue as pip):
+```bash
+git -c http.sslVerify=false push
+```
+
 ## Architecture
 
 Modular Streamlit dashboard split into 4 files inside `efficient_frontier_app/`.
