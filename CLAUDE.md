@@ -20,6 +20,23 @@ python -m venv .venv
 
 **Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download ETF Data" panel.
 
+## Testing
+
+**Requires the app to be running first** (`Run app` command above), then:
+
+```bash
+.venv\Scripts\python test_dashboard.py
+```
+
+Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all 8 section headers render plus portfolio card metrics. Screenshots are saved to `test_screenshots/` (gitignored).
+
+**Install Playwright** (already in venv; only needed once on a fresh clone):
+```bash
+.venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org playwright
+# Chromium download requires disabling Node SSL verification on this machine:
+$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"; .venv\Scripts\playwright install chromium
+```
+
 ## Git
 
 Remote: https://github.com/LaRambla20/portfolio-optimization-dashboard_streamlit.git

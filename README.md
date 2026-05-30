@@ -30,6 +30,16 @@ python -m venv .venv
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
+## Testing
+
+A Playwright end-to-end test drives the full dashboard in a real browser. Start the app first, then run:
+
+```bash
+.venv\Scripts\python test_dashboard.py
+```
+
+This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
+
 ## Project Structure
 
 ```
