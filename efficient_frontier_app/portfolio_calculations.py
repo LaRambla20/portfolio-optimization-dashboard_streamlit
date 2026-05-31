@@ -6,7 +6,6 @@ All functions are pure math operations with no side effects.
 import numpy as np
 import pandas as pd
 import scipy.optimize as sco
-from scipy import stats
 
 
 def portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor):
@@ -17,15 +16,6 @@ def portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualis
     average = np.sum(mean_returns * weights) * annualisation_factor
     std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(annualisation_factor)
     return std, average
-
-
-def portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, annualisation_factor):
-    std, average = portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)
-    # Drift-free (mean-independent) parametric VaR: sigma * |z|. Dropping the expected-return term
-    # keeps VaR non-negative over long horizons and avoids folding the uncertain return forecast
-    # into a risk measure. Under the normal assumption VaR is then proportional to volatility.
-    var = std * abs(stats.norm.ppf(1 - alpha))  # positive = loss amount
-    return std, average, var
 
 
 def cvar(returns, alpha=0.05):
@@ -127,25 +117,6 @@ def random_portfolios_sortino(num_portfolios, mean_returns, cov_matrix, returns,
         results[2, i] = (ret - risk_free_rate) / std if std > 0 else 0.0
         results[3, i] = sortino if not np.isnan(sortino) else 0.0
         results[4, i] = dd
-    return results, weights_record
-
-
-def random_portfolios_VaR(num_portfolios, mean_returns, cov_matrix, risk_free_rate, alpha, annualisation_factor):
-    # Returns 4 rows: [std, return, sharpe, VaR]. CVaR is computed historically at display
-    # time (see display_portfolio_cards) so the whole app uses one CVaR definition and sign.
-    results = np.zeros((4, num_portfolios))
-    weights_record = []
-    for i in range(num_portfolios):
-        # Dirichlet(1,...,1) gives uniform coverage of the weight simplex (see random_portfolios).
-        weights = np.random.dirichlet(np.ones(len(mean_returns)))
-        weights_record.append(weights)
-        portfolio_std_dev, portfolio_return, portfolio_var = portfolio_annualised_performance_VaR(
-            weights, mean_returns, cov_matrix, alpha, annualisation_factor
-        )
-        results[0, i] = portfolio_std_dev
-        results[1, i] = portfolio_return
-        results[2, i] = (portfolio_return - risk_free_rate) / portfolio_std_dev
-        results[3, i] = portfolio_var
     return results, weights_record
 
 
