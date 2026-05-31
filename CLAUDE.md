@@ -87,7 +87,7 @@ CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (peri
 ### VaR / CVaR Gotchas
 
 - **`cvar(returns, alpha)` expects the tail quantile** (e.g., `alpha=0.05` for 95% CVaR), NOT the confidence level (`0.95`). The sidebar `alpha` is the confidence level — pass `1 - alpha` to `cvar()`.
-- **Sign conventions differ**: `portfolio_annualised_performance_VaR()` returns VaR as a **positive loss amount**. `cvar()` returns CVaR as a **negative return** (e.g., -0.15 = 15% expected shortfall). Keep this in mind when displaying both metrics side-by-side.
+- **Sign convention (loss = positive)**: both `portfolio_annualised_performance_VaR()` (VaR) and `cvar()` (CVaR) report losses as **positive** numbers. CVaR for the portfolio cards is computed once, historically, at display time in `display_portfolio_cards(portfolios, alpha)`, so the whole app uses a single CVaR definition and sign.
 
 ### Key Functions
 
@@ -100,16 +100,16 @@ CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (peri
 
 **portfolio_calculations.py:**
 - `portfolio_annualised_performance(weights, mean_returns, cov_matrix, ...)` — portfolio return/volatility
-- `portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, ...)` — also returns CVaR
+- `portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, ...)` — returns (std, ann. return, parametric VaR)
 - `compute_portfolio_rolling_returns(weights, returns_simple, window_periods)` — portfolio rolling returns
 - `cvar(returns, alpha=0.05)` — historical CVaR; `alpha` is tail quantile
 - `max_drawdown(returns)` — maximum drawdown
 - `portfolio_cvar(weights, returns, alpha)` / `portfolio_max_drawdown(weights, returns)` — portfolio-level CVaR and Max DD
 - `random_portfolios(num, mean_returns, cov_matrix, ...)` — Monte Carlo simulation
 - `random_portfolios_sortino(num, ...)` — returns 5 rows (std, ret, sharpe, sortino, downside_dev); used in sections 5 & 6
-- `random_portfolios_VaR(num, ...)` — returns 5 rows (std, return, sharpe, VaR, CVaR)
+- `random_portfolios_VaR(num, ...)` — returns 4 rows (std, return, sharpe, VaR); CVaR is computed historically at display time
 
 **ui_components.py:**
 - `render_rolling_returns()` — renders 3b. Rolling Returns section
-- `collect_portfolio_info()` — returns dict with max_dd and cvar fields
-- `display_portfolio_cards()` — shows 6 metrics including Max Drawdown and CVaR
+- `collect_portfolio_info()` — returns dict with max_dd and port_returns (CVaR is computed later from port_returns)
+- `display_portfolio_cards(portfolios, alpha)` — shows 6 metrics incl. Max Drawdown and CVaR at the user's confidence level (label updates with α)

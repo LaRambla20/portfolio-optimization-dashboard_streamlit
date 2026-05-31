@@ -49,11 +49,10 @@ def collect_portfolio_info(name, weights, mean_returns, cov_matrix, risk_free_ra
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
-    p_cvar  = cvar(port_returns)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc, "var": None,
-            "max_dd": mdd, "cvar": p_cvar}
+            "max_dd": mdd, "port_returns": port_returns}
 
 
 def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
@@ -68,11 +67,10 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
-    p_cvar  = cvar(port_returns)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc, "var": None,
-            "max_dd": mdd, "cvar": p_cvar}
+            "max_dd": mdd, "port_returns": port_returns}
 
 
 def collect_portfolio_info_VaR(name, weights, mean_returns, cov_matrix, risk_free_rate,
@@ -85,11 +83,10 @@ def collect_portfolio_info_VaR(name, weights, mean_returns, cov_matrix, risk_fre
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
-    p_cvar  = cvar(port_returns, 1 - alpha)  # alpha is confidence level, cvar expects tail quantile
     ax.scatter(var, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc, "var": var,
-            "max_dd": mdd, "cvar": p_cvar}
+            "max_dd": mdd, "port_returns": port_returns}
 
 
 def collect_portfolio_info_mtc_VaR(name, index, results, weights_list, mean_returns,
@@ -99,21 +96,19 @@ def collect_portfolio_info_mtc_VaR(name, index, results, weights_list, mean_retu
     ret     = results[1, index]
     sharpe  = results[2, index]
     var     = results[3, index]
-    cvar_val = results[4, index]
     weights = weights_list[index]
     dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor)
     sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
-    p_cvar  = cvar(port_returns)
     ax.scatter(var, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc, "var": var,
-            "max_dd": mdd, "cvar": p_cvar}
+            "max_dd": mdd, "port_returns": port_returns}
 
 
-def display_portfolio_cards(portfolios):
+def display_portfolio_cards(portfolios, alpha):
     for p in portfolios:
         with st.expander(f"{p['name']}", expanded=False):
             c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -127,10 +122,30 @@ def display_portfolio_cards(portfolios):
             c3.metric("Sharpe Ratio",  f"{p['sharpe']:.3f}")
             sortino_val = p.get("sortino")
             c4.metric("Sortino Ratio", f"{sortino_val:.3f}" if sortino_val is not None and not np.isnan(sortino_val) else "n/a")
-            c5.metric("Max Drawdown", f"{p.get('max_dd', 0):.2%}")
-            c6.metric("CVaR Historical (95%)", f"{p.get('cvar', 0):.2%}")
+            c5.metric(
+                "Max Drawdown",
+                f"{p.get('max_dd', 0):.2%}",
+                help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
+                     "not annualised.",
+            )
+            # CVaR computed once here, at the user's chosen confidence level, from the portfolio's
+            # own return series (single CVaR definition / sign across the whole app: positive = loss).
+            port_returns = p.get("port_returns")
+            cvar_val = cvar(port_returns, 1 - alpha) if port_returns is not None else 0.0
+            c6.metric(
+                f"CVaR ({alpha:.0%})",
+                f"{cvar_val:.2%}",
+                help="Expected shortfall: the average loss on the worst (1−confidence) slice of "
+                     "individual periods (e.g. days). A per-period figure — not annualised — so it "
+                     "sits on a shorter horizon than the annual return and volatility above.",
+            )
             if p.get("var") is not None:
-                st.metric("Value at Risk", f"{p['var']:.2%}")
+                st.metric(
+                    "Value at Risk (annual)",
+                    f"{p['var']:.2%}",
+                    help="Parametric 1-year Value at Risk at the chosen confidence level, assuming "
+                         "normally-distributed returns.",
+                )
             alloc_series = p["alloc"].iloc[0]
             left, right  = st.columns([1, 1])
             with left:
@@ -582,7 +597,7 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
 
 def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
-                        custom_target_ret, custom_target_vol, my_portfolio_allocation):
+                        custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha):
     st.header("5. Monte Carlo Efficient Frontier (Volatility)")
     render_section_help(
         "This section randomly simulates thousands of portfolios to map the trade-off between "
@@ -734,7 +749,7 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
     st.pyplot(fig_mc_so)
     plt.close(fig_mc_so)
 
-    display_portfolio_cards(portfolios_mc)
+    display_portfolio_cards(portfolios_mc, alpha)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -744,7 +759,7 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
 def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                     my_portfolio_allocation):
+                     my_portfolio_allocation, alpha):
     st.header("6. Scipy Efficient Frontier (Volatility)")
     render_section_help(
         "This section mathematically solves for the best portfolios — rather than guessing "
@@ -908,7 +923,7 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
     st.pyplot(fig_sc_so)
     plt.close(fig_sc_so)
 
-    display_portfolio_cards(portfolios_sc)
+    display_portfolio_cards(portfolios_sc, alpha)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1063,6 +1078,6 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
     st.pyplot(fig_var2)
     plt.close(fig_var2)
 
-    display_portfolio_cards(portfolios_var)
+    display_portfolio_cards(portfolios_var, alpha)
 
     st.success(" Analysis complete!")

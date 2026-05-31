@@ -332,11 +332,11 @@ render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_retu
                            risk_free_rate)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
-                    custom_target_ret, custom_target_vol, my_portfolio_allocation)
+                    custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha)
 render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                   tickers, annualisation_factor, risk_free_rate, num_portfolios,
                   num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                  my_portfolio_allocation)
+                  my_portfolio_allocation, alpha)
 render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      eps, alpha, custom_target_ret, custom_target_VaR, my_portfolio_allocation)

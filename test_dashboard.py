@@ -113,7 +113,7 @@ def test_dashboard():
         expect(page.locator("text=Average annual return").first).to_be_attached(timeout=10_000)
         expect(page.locator("text=Sharpe Ratio").first).to_be_attached(timeout=5_000)
         expect(page.locator("text=Max Drawdown").first).to_be_attached(timeout=5_000)
-        expect(page.locator("text=CVaR Historical").first).to_be_attached(timeout=5_000)
+        expect(page.locator("text=CVaR (95%)").first).to_be_attached(timeout=5_000)
         shot(page, "10_portfolio_card_expanded")
         print("  OK: card expanded with metrics")
 

@@ -122,10 +122,10 @@ def random_portfolios_sortino(num_portfolios, mean_returns, cov_matrix, returns,
 
 
 def random_portfolios_VaR(num_portfolios, mean_returns, cov_matrix, risk_free_rate, alpha, annualisation_factor):
-    results = np.zeros((5, num_portfolios))
+    # Returns 4 rows: [std, return, sharpe, VaR]. CVaR is computed historically at display
+    # time (see display_portfolio_cards) so the whole app uses one CVaR definition and sign.
+    results = np.zeros((4, num_portfolios))
     weights_record = []
-    z = stats.norm.ppf(1 - alpha)
-    phi_z = stats.norm.pdf(z)
     for i in range(num_portfolios):
         weights = np.random.random(len(mean_returns))
         weights /= np.sum(weights)
@@ -133,13 +133,10 @@ def random_portfolios_VaR(num_portfolios, mean_returns, cov_matrix, risk_free_ra
         portfolio_std_dev, portfolio_return, portfolio_var = portfolio_annualised_performance_VaR(
             weights, mean_returns, cov_matrix, alpha, annualisation_factor
         )
-        # CVaR using normal distribution: CVaR = μ - σ * φ(z) / (1-α) where z = ppf(1-α)
-        portfolio_cvar = portfolio_return - portfolio_std_dev * phi_z / (1 - alpha)
         results[0, i] = portfolio_std_dev
         results[1, i] = portfolio_return
         results[2, i] = (portfolio_return - risk_free_rate) / portfolio_std_dev
         results[3, i] = portfolio_var
-        results[4, i] = portfolio_cvar
     return results, weights_record
 
 
