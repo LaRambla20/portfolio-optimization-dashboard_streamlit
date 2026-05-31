@@ -438,12 +438,16 @@ volatility of your portfolio, which together produce the Value at Risk figure be
     "var_parametric": r"""
 **Parametric Value at Risk (VaR)**
 
-*How it's computed:* assuming returns follow a bell curve, VaR combines the z-score, the
-volatility and the average return into a worst-case loss at your confidence level:
+*How it's computed:* assuming returns follow a bell curve, VaR scales volatility by the z-score to
+mark the loss at the edge of your confidence level. The per-period figures keep the (tiny) expected
+return:
 
 $$\text{VaR}_\alpha = \sigma\,|z| - \mu$$
 
-where $\sigma$ = volatility, $\mu$ = average return, $|z|$ = the size of the z-score.
+while the **annual** VaR on the frontier and cards uses the conservative *drift-free* form
+$\text{VaR}^{\text{ann}}_\alpha = \sigma_{\text{ann}}\,|z|$ — dropping $\mu$ so it can't turn negative
+over long horizons and is simply proportional to volatility. Here $\sigma$ = volatility, $\mu$ =
+average return, $|z|$ = size of the z-score.
 
 *What it means for you:* "with 95% confidence, I won't lose more than X over this period." A 95%
 VaR of 5% means only about 1 period in 20 should be worse than a 5% loss.
@@ -489,13 +493,15 @@ than the formula suggests.
 **VaR efficient frontier**
 
 *How it's computed:* the same thousands of simulated portfolios as the Monte Carlo section, but
-plotted with **Value at Risk** on the horizontal axis instead of volatility.
+plotted with **annual Value at Risk** on the horizontal axis instead of volatility.
 
 *What it means for you:* it maps the trade-off between expected return and worst-case loss, and
 highlights the mix with the smallest VaR for a given return.
 
-*Why it's useful:* some investors care less about everyday bumpiness (volatility) and more about
-how bad a rare bad outcome could be. This frontier optimises for that specific fear.
+*Why it's useful:* it frames risk as a worst-case **loss** rather than as bumpiness, which many
+investors find more tangible. Note: because the annual VaR here is the drift-free normal version
+(proportional to volatility), this frontier has the same shape as the volatility frontier — just
+rescaled onto a loss axis. A genuinely different ranking would need a fat-tailed or historical VaR.
 """,
 }
 

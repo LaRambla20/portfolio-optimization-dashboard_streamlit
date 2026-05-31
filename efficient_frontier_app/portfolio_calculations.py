@@ -21,7 +21,10 @@ def portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualis
 
 def portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, annualisation_factor):
     std, average = portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)
-    var = std * abs(stats.norm.ppf(1 - alpha)) - average  # positive = loss amount
+    # Drift-free (mean-independent) parametric VaR: sigma * |z|. Dropping the expected-return term
+    # keeps VaR non-negative over long horizons and avoids folding the uncertain return forecast
+    # into a risk measure. Under the normal assumption VaR is then proportional to volatility.
+    var = std * abs(stats.norm.ppf(1 - alpha))  # positive = loss amount
     return std, average, var
 
 

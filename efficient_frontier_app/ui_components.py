@@ -143,8 +143,9 @@ def display_portfolio_cards(portfolios, alpha):
                 st.metric(
                     "Value at Risk (annual)",
                     f"{p['var']:.2%}",
-                    help="Parametric 1-year Value at Risk at the chosen confidence level, assuming "
-                         "normally-distributed returns.",
+                    help="Parametric 1-year Value at Risk (σ·z) at the chosen confidence level, assuming "
+                         "normal returns. Drift-free (ignores expected return), so it can't go negative and "
+                         "is proportional to volatility.",
                 )
             alloc_series = p["alloc"].iloc[0]
             left, right  = st.columns([1, 1])
@@ -1029,7 +1030,13 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
             "historical figures are broadly consistent."
         )
 
-    st.subheader("Monte Carlo Efficient Frontier (VaR axis)")
+    st.subheader("Monte Carlo Efficient Frontier (annual VaR axis)")
+    st.caption(
+        "The figures above are **per-period**. The frontier below uses **annual** VaR so its reward "
+        "axis matches the annual return used in sections 5–6. The annual VaR is the conservative "
+        "drift-free version (σ·z); under the normal model it is proportional to volatility, so this "
+        "frontier mirrors the volatility frontier on a loss scale."
+    )
 
     results_var, weights_var = random_portfolios_VaR(num_portfolios, portfolio_mean_returns,
                                                        portfolio_cov_matrix, risk_free_rate,
@@ -1121,13 +1128,13 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
 
     single_etfs_std_dev = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
     single_etfs_ret = portfolio_mean_returns * annualisation_factor
-    single_etfs_VaR = single_etfs_std_dev * abs(stats.norm.ppf(1 - alpha)) - single_etfs_ret
+    single_etfs_VaR = single_etfs_std_dev * abs(stats.norm.ppf(1 - alpha))  # drift-free, matches annual VaR
     ax_var2.scatter(single_etfs_VaR, single_etfs_ret, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):
         ax_var2.annotate(txt, (single_etfs_VaR.iloc[i], single_etfs_ret.iloc[i]), xytext=(10, 0), textcoords="offset points", fontsize=9)
 
-    ax_var2.set_title(f"Simulated Portfolio Optimization based on Efficient Frontier (VaR, α={alpha})")
-    ax_var2.set_xlabel(f"Value at Risk (α={alpha})")
+    ax_var2.set_title(f"Simulated Portfolio Optimization based on Efficient Frontier (annual VaR, α={alpha})")
+    ax_var2.set_xlabel(f"Annual Value at Risk (α={alpha})")
     ax_var2.set_ylabel("Annualised Returns")
     ax_var2.legend(labelspacing=0.8)
     st.pyplot(fig_var2)
