@@ -15,11 +15,9 @@ import os
 from scipy import stats
 from portfolio_calculations import (
     portfolio_annualised_performance,
-    portfolio_annualised_performance_VaR,
     portfolio_downside_deviation,
     random_portfolios,
     random_portfolios_sortino,
-    random_portfolios_VaR,
     max_sharpe_ratio,
     max_sortino_ratio,
     minimize_volatility,
@@ -70,41 +68,6 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc, "var": None,
-            "max_dd": mdd, "port_returns": port_returns}
-
-
-def collect_portfolio_info_VaR(name, weights, mean_returns, cov_matrix, risk_free_rate,
-                                portfolio_returns_simple, tickers, alpha, annualisation_factor,
-                                ax, marker, color, size):
-    std_dev, ret, var = portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, annualisation_factor)
-    sharpe  = (ret - risk_free_rate) / std_dev
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
-    sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
-    alloc   = make_allocation_df(weights, tickers)
-    port_returns = portfolio_returns_simple.dot(weights)
-    mdd     = max_drawdown(port_returns)
-    ax.scatter(var, ret, marker=marker, color=color, s=size, label=name, zorder=5)
-    return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
-            "sortino": sortino, "alloc": alloc, "var": var,
-            "max_dd": mdd, "port_returns": port_returns}
-
-
-def collect_portfolio_info_mtc_VaR(name, index, results, weights_list, mean_returns,
-                                     cov_matrix, risk_free_rate, portfolio_returns_simple,
-                                     tickers, annualisation_factor, ax, marker, color, size):
-    std_dev = results[0, index]
-    ret     = results[1, index]
-    sharpe  = results[2, index]
-    var     = results[3, index]
-    weights = weights_list[index]
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
-    sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
-    alloc   = make_allocation_df(weights, tickers)
-    port_returns = portfolio_returns_simple.dot(weights)
-    mdd     = max_drawdown(port_returns)
-    ax.scatter(var, ret, marker=marker, color=color, s=size, label=name, zorder=5)
-    return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
-            "sortino": sortino, "alloc": alloc, "var": var,
             "max_dd": mdd, "port_returns": port_returns}
 
 
@@ -931,15 +894,12 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
 # SECTION 7 — VAR ANALYSIS
 # ─────────────────────────────────────────────────────────────────
 
-def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
-                         tickers, annualisation_factor, risk_free_rate, num_portfolios,
-                         eps, alpha, custom_target_ret, custom_target_VaR, my_portfolio_allocation):
+def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation):
     st.header("7. Value at Risk (VaR) Analysis")
     render_section_help(
         "This section estimates how much you could lose on a bad day or in a bad tail of "
         "outcomes, using Value at Risk and its sibling CVaR.",
-        ["zscore", "var_parametric", "var_historical", "cvar", "return_distribution",
-         "var_frontier", "marked_portfolios"],
+        ["zscore", "var_parametric", "var_historical", "cvar", "return_distribution"],
     )
 
     z_score = stats.norm.ppf(1 - alpha)
@@ -955,7 +915,12 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
     phi_z = stats.norm.pdf(z_score)
     param_cvar_loss = sigma_var * phi_z / tail - mu_var  # normal expected shortfall
 
-    # Historical (empirical) tail risk, per period — no distribution assumption
+    # Historical (empirical) tail risk, per period — no distribution assumption. Only trustworthy
+    # when enough observations fall in the tail: n_tail ~ (1 - alpha) * n.
+    n_obs = len(my_portfolio_returns)
+    n_tail = int(round(tail * n_obs))
+    hist_ok = n_tail >= 5                # below this the empirical tail is essentially noise
+    hist_indicative = 5 <= n_tail < 20   # usable but shaky
     hist_var_return = my_portfolio_returns.quantile(tail)  # empirical tail quantile (negative)
     hist_var_loss = -hist_var_return
     hist_cvar_loss = cvar(my_portfolio_returns, tail)      # mean of the worst `tail` fraction
@@ -976,7 +941,8 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
     ax_var.fill_between(x, 0, pdf, where=(x < VaR_return), color="red", alpha=0.25, label=f"worst {tail:.0%} (normal)")
     ax_var.hist(my_portfolio_returns, bins=50, density=True, alpha=0.7, color="magenta", edgecolor="black")
     ax_var.axvline(VaR_return, color="red", linestyle="--", linewidth=1.2, label=f"Parametric VaR ({param_var_loss:.1%})")
-    ax_var.axvline(hist_var_return, color="darkorange", linestyle=":", linewidth=1.8, label=f"Historical VaR ({hist_var_loss:.1%})")
+    if hist_ok:
+        ax_var.axvline(hist_var_return, color="darkorange", linestyle=":", linewidth=1.8, label=f"Historical VaR ({hist_var_loss:.1%})")
     ax_var.set_title("Distribution of Returns — My Portfolio")
     ax_var.set_xlabel("Per-period return")
     ax_var.set_ylabel("Frequency (density)")
@@ -1007,18 +973,34 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
         help=f"Assuming a perfect bell curve: if a period does land in that worst {tail:.0%}, this is the "
              "average loss the model expects across those periods.",
     )
-    r3.metric(
-        "Historical VaR", f"{hist_var_loss:.2%}",
-        help=f"From the actual return history: the portfolio lost more than this on only its worst {tail:.0%} "
-             "of periods. No bell-curve assumption.",
-    )
-    r4.metric(
-        "Historical CVaR", f"{hist_cvar_loss:.2%}",
-        help=f"From the actual return history: across its worst {tail:.0%} of periods, this was the average "
-             "loss. No bell-curve assumption.",
-    )
+    if hist_ok:
+        note = f" (indicative - only {n_tail} observations in the tail)" if hist_indicative else ""
+        r3.metric(
+            "Historical VaR", f"{hist_var_loss:.2%}",
+            help=f"From the actual return history: the portfolio lost more than this on only its worst "
+                 f"{tail:.0%} of periods ({n_tail} of {n_obs}). No bell-curve assumption.{note}",
+        )
+        r4.metric(
+            "Historical CVaR", f"{hist_cvar_loss:.2%}",
+            help=f"From the actual return history: across its worst {tail:.0%} of periods ({n_tail} of "
+                 f"{n_obs}), this was the average loss. No bell-curve assumption.{note}",
+        )
+    else:
+        insufficient = (
+            f"Not enough history for a reliable estimate: only {n_tail} observation(s) fall in the worst "
+            f"{tail:.0%} tail (of {n_obs}). Use a longer date range, a higher-frequency data period, or a "
+            "lower confidence level."
+        )
+        r3.metric("Historical VaR", "n/a", help=insufficient)
+        r4.metric("Historical CVaR", "n/a", help=insufficient)
 
-    if hist_var_loss > param_var_loss or exkurt > 1.0:
+    if not hist_ok:
+        st.info(
+            f"Too little overlapping history to judge tail behaviour from actual data — only {n_tail} "
+            f"observation(s) land in the worst {tail:.0%} (of {n_obs}). The parametric (normal) figures "
+            "are shown, but treat tail risk with caution and add more data if you can."
+        )
+    elif hist_var_loss > param_var_loss or exkurt > 1.0:
         st.warning(
             f"This portfolio's losses are fatter-tailed than a normal bell curve (excess kurtosis "
             f"{exkurt:.1f}). The **historical** VaR/CVaR are the more honest picture of tail risk here — "
@@ -1029,117 +1011,5 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
             "This portfolio's returns are reasonably close to a normal bell curve, so the parametric and "
             "historical figures are broadly consistent."
         )
-
-    st.subheader("Monte Carlo Efficient Frontier (annual VaR axis)")
-    st.caption(
-        "The figures above are **per-period**. The frontier below uses **annual** VaR so its reward "
-        "axis matches the annual return used in sections 5–6. The annual VaR is the conservative "
-        "drift-free version (σ·z); under the normal model it is proportional to volatility, so this "
-        "frontier mirrors the volatility frontier on a loss scale."
-    )
-
-    results_var, weights_var = random_portfolios_VaR(num_portfolios, portfolio_mean_returns,
-                                                       portfolio_cov_matrix, risk_free_rate,
-                                                       alpha, annualisation_factor)
-    weights_array_var = np.array(weights_var)
-
-    fig_var2, ax_var2 = plt.subplots(figsize=(10, 7))
-    sc3 = ax_var2.scatter(results_var[3, :], results_var[1, :], c=results_var[2, :],
-                           cmap="YlGnBu", marker="o", s=10, alpha=0.3)
-    plt.colorbar(sc3, ax=ax_var2, label="Sharpe Ratio")
-
-    portfolios_var = []
-
-    p = collect_portfolio_info_VaR("My Portfolio", my_portfolio_weights, portfolio_mean_returns,
-                                     portfolio_cov_matrix, risk_free_rate, portfolio_returns_simple,
-                                     tickers, alpha, annualisation_factor, ax_var2, "P", "y", 500)
-    portfolios_var.append(p)
-    my_ret_var = p["ret"]
-    my_VaR_var = p["var"]
-
-    mask = (results_var[1, :] >= my_ret_var - eps) & (results_var[1, :] <= my_ret_var + eps)
-    filt_r = results_var[:, mask]; filt_w = weights_array_var[mask, :]
-    if filt_r.shape[1] > 0:
-        idx = np.argmin(filt_r[3, :])
-        p = collect_portfolio_info_mtc_VaR("My Portfolio Min VaR", idx, filt_r, filt_w,
-                                            portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                            portfolio_returns_simple, tickers, annualisation_factor,
-                                            ax_var2, "P", "c", 200)
-        portfolios_var.append(p)
-
-    mask = (results_var[3, :] >= my_VaR_var - eps) & (results_var[3, :] <= my_VaR_var + eps)
-    filt_r = results_var[:, mask]; filt_w = weights_array_var[mask, :]
-    if filt_r.shape[1] > 0:
-        idx = np.argmax(filt_r[1, :])
-        p = collect_portfolio_info_mtc_VaR("My Portfolio Max Ret", idx, filt_r, filt_w,
-                                            portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                            portfolio_returns_simple, tickers, annualisation_factor,
-                                            ax_var2, "P", "m", 200)
-        portfolios_var.append(p)
-
-    min_VaR_idx = np.argmin(results_var[3])
-    p_mv_var = collect_portfolio_info_mtc_VaR("Min VaR Portfolio", min_VaR_idx, results_var, weights_var,
-                                                portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                                portfolio_returns_simple, tickers, annualisation_factor,
-                                                ax_var2, "*", "c", 500)
-    portfolios_var.append(p_mv_var)
-    min_VaR_ret = p_mv_var["ret"]
-    min_VaR_VaR = p_mv_var["var"]
-
-    max_ret_var_idx = np.argmax(results_var[1])
-    p_mr_var = collect_portfolio_info_mtc_VaR("Max Return Portfolio", max_ret_var_idx, results_var, weights_var,
-                                                portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                                portfolio_returns_simple, tickers, annualisation_factor,
-                                                ax_var2, "*", "m", 500)
-    portfolios_var.append(p_mr_var)
-    max_ret_ret_var = p_mr_var["ret"]
-    max_ret_VaR_var = p_mr_var["var"]
-
-    max_sharpe_var_idx = np.argmax(results_var[2])
-    p_ms_var = collect_portfolio_info_mtc_VaR("Max Sharpe Portfolio", max_sharpe_var_idx, results_var, weights_var,
-                                               portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                               portfolio_returns_simple, tickers, annualisation_factor,
-                                               ax_var2, "*", "r", 500)
-    portfolios_var.append(p_ms_var)
-
-    if custom_target_ret is not None:
-        if min_VaR_ret <= custom_target_ret <= max_ret_ret_var:
-            mask = (results_var[1, :] >= custom_target_ret - eps) & (results_var[1, :] <= custom_target_ret + eps)
-            filt_r = results_var[:, mask]; filt_w = weights_array_var[mask, :]
-            if filt_r.shape[1] > 0:
-                idx = np.argmin(filt_r[0, :])
-                p = collect_portfolio_info_mtc_VaR("Custom Portfolio Min Vol", idx, filt_r, filt_w,
-                                                     portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                                     portfolio_returns_simple, tickers, annualisation_factor,
-                                                     ax_var2, "X", "c", 200)
-                portfolios_var.append(p)
-
-    if custom_target_VaR is not None:
-        if min_VaR_VaR <= custom_target_VaR <= max_ret_VaR_var:
-            mask = (results_var[3, :] >= custom_target_VaR - eps) & (results_var[3, :] <= custom_target_VaR + eps)
-            filt_r = results_var[:, mask]; filt_w = weights_array_var[mask, :]
-            if filt_r.shape[1] > 0:
-                idx = np.argmax(filt_r[1, :])
-                p = collect_portfolio_info_mtc_VaR("Custom Portfolio Max Ret", idx, filt_r, filt_w,
-                                                     portfolio_mean_returns, portfolio_cov_matrix, risk_free_rate,
-                                                     portfolio_returns_simple, tickers, annualisation_factor,
-                                                     ax_var2, "X", "m", 200)
-                portfolios_var.append(p)
-
-    single_etfs_std_dev = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret = portfolio_mean_returns * annualisation_factor
-    single_etfs_VaR = single_etfs_std_dev * abs(stats.norm.ppf(1 - alpha))  # drift-free, matches annual VaR
-    ax_var2.scatter(single_etfs_VaR, single_etfs_ret, marker="o", s=200, zorder=6)
-    for i, txt in enumerate(tickers):
-        ax_var2.annotate(txt, (single_etfs_VaR.iloc[i], single_etfs_ret.iloc[i]), xytext=(10, 0), textcoords="offset points", fontsize=9)
-
-    ax_var2.set_title(f"Simulated Portfolio Optimization based on Efficient Frontier (annual VaR, α={alpha})")
-    ax_var2.set_xlabel(f"Annual Value at Risk (α={alpha})")
-    ax_var2.set_ylabel("Annualised Returns")
-    ax_var2.legend(labelspacing=0.8)
-    st.pyplot(fig_var2)
-    plt.close(fig_var2)
-
-    display_portfolio_cards(portfolios_var, alpha)
 
     st.success(" Analysis complete!")

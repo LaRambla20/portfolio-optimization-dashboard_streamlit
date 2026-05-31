@@ -489,20 +489,6 @@ reasonable. If the real bars stick out well past the curve on the left, true tai
 than the formula suggests.
 """,
 
-    "var_frontier": r"""
-**VaR efficient frontier**
-
-*How it's computed:* the same thousands of simulated portfolios as the Monte Carlo section, but
-plotted with **annual Value at Risk** on the horizontal axis instead of volatility.
-
-*What it means for you:* it maps the trade-off between expected return and worst-case loss, and
-highlights the mix with the smallest VaR for a given return.
-
-*Why it's useful:* it frames risk as a worst-case **loss** rather than as bumpiness, which many
-investors find more tangible. Note: because the annual VaR here is the drift-free normal version
-(proportional to volatility), this frontier has the same shape as the volatility frontier — just
-rescaled onto a loss axis. A genuinely different ranking would need a fat-tailed or historical VaR.
-""",
 }
 
 
