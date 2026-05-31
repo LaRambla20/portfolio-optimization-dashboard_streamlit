@@ -307,8 +307,9 @@ either alone.
     "monte_carlo": r"""
 **Monte Carlo simulation (random portfolios)**
 
-*How it's computed:* generate thousands of random weight combinations (each set scaled to sum to
-100%), and for every one compute its annual return, volatility and Sharpe ratio:
+*How it's computed:* generate thousands of random weight combinations — drawn so they spread
+evenly across every possible mix (each set is non-negative and sums to 100%) — and for every one
+compute its annual return, volatility and Sharpe ratio:
 
 $$w_i \ge 0, \qquad \sum_i w_i = 1$$
 

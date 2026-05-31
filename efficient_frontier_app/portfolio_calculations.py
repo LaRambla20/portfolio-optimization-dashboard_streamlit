@@ -93,8 +93,9 @@ def random_portfolios(num_portfolios, mean_returns, cov_matrix, risk_free_rate, 
     results = np.zeros((3, num_portfolios))
     weights_record = []
     for i in range(num_portfolios):
-        weights = np.random.random(mean_returns.shape[0])
-        weights /= np.sum(weights)
+        # Dirichlet(1,...,1) is uniform over the weight simplex; normalising raw uniforms is not,
+        # and would cluster near equal weights and under-sample concentrated (corner) portfolios.
+        weights = np.random.dirichlet(np.ones(mean_returns.shape[0]))
         weights_record.append(weights)
         portfolio_std_dev, portfolio_return = portfolio_annualised_performance(
             weights, mean_returns, cov_matrix, annualisation_factor
@@ -110,8 +111,9 @@ def random_portfolios_sortino(num_portfolios, mean_returns, cov_matrix, returns,
     results = np.zeros((5, num_portfolios))
     weights_record = []
     for i in range(num_portfolios):
-        weights = np.random.random(mean_returns.shape[0])
-        weights /= np.sum(weights)
+        # Dirichlet(1,...,1) is uniform over the weight simplex; normalising raw uniforms is not,
+        # and would cluster near equal weights and under-sample concentrated (corner) portfolios.
+        weights = np.random.dirichlet(np.ones(mean_returns.shape[0]))
         weights_record.append(weights)
         std, ret, sortino = portfolio_annualised_performance_sortino(
             weights, mean_returns, cov_matrix, returns,
@@ -131,8 +133,8 @@ def random_portfolios_VaR(num_portfolios, mean_returns, cov_matrix, risk_free_ra
     results = np.zeros((4, num_portfolios))
     weights_record = []
     for i in range(num_portfolios):
-        weights = np.random.random(len(mean_returns))
-        weights /= np.sum(weights)
+        # Dirichlet(1,...,1) gives uniform coverage of the weight simplex (see random_portfolios).
+        weights = np.random.dirichlet(np.ones(len(mean_returns)))
         weights_record.append(weights)
         portfolio_std_dev, portfolio_return, portfolio_var = portfolio_annualised_performance_VaR(
             weights, mean_returns, cov_matrix, alpha, annualisation_factor
