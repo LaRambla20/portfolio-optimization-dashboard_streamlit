@@ -90,7 +90,7 @@ with st.sidebar.expander("Download settings", expanded=False):
         value="individual_indices_data",
         help="Must match the CSV folder path used for analysis.",
     )
-    dl_button = st.button("⬇️  Download now", use_container_width=True)
+    dl_button = st.button("⬇️  Download now", width="stretch")
 
 # --- Portfolio definition ---
 st.sidebar.subheader("My Portfolio")
@@ -114,7 +114,7 @@ if "portfolio_df" not in st.session_state:
 edited_portfolio = st.sidebar.data_editor(
     st.session_state.portfolio_df,
     num_rows="dynamic",
-    use_container_width=True,
+    width="stretch",
     column_config={
         "Ticker": st.column_config.TextColumn("Ticker", required=True),
         "Market Value (EUR)": st.column_config.NumberColumn(
@@ -267,7 +267,7 @@ if dl_button:
 # RUN BUTTON
 # ─────────────────────────────────────────────────────────
 
-run = st.button("▶  Run Analysis", type="primary", use_container_width=True)
+run = st.button("▶  Run Analysis", type="primary", width="stretch")
 
 if not run:
     st.info("Configure parameters in the sidebar, then click **Run Analysis**.")

@@ -114,7 +114,7 @@ def display_portfolio_cards(portfolios, alpha):
             alloc_series = p["alloc"].iloc[0]
             left, right  = st.columns([1, 1])
             with left:
-                st.dataframe(p["alloc"], use_container_width=True)
+                st.dataframe(p["alloc"], width="stretch")
             with right:
                 nonzero = alloc_series[alloc_series > 0]
                 if nonzero.empty:
@@ -151,7 +151,7 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
                      "New Price": f"{new:.4f}", "Change": f"{pct:+.1%}"}
                     for d, prev, new, pct in events
                 ]
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             st.caption(
                 "These events may be stock splits, data errors, or genuine extreme moves. "
                 "If they are splits already reflected in the Adj Close column they are harmless; "
@@ -316,7 +316,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                 simple_rows.append({"Period": label, "From": sd.date(), "To": end_date.date(),
                                      "Simple Return": f"{sr:.2%}"})
             st.subheader("Simple Return (single-period)")
-            st.dataframe(pd.DataFrame(simple_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(simple_rows), width="stretch", hide_index=True)
 
             yearly_rows = []
             for yr_offset in range(3):
@@ -326,7 +326,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                 sr = evaluate_simple_return(subdf["adj close"], sd, ed)
                 yearly_rows.append({"Year": considered_year, "From": sd.date(), "To": ed.date(),
                                      "Simple Return": f"{sr:.2%}"})
-            st.dataframe(pd.DataFrame(yearly_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(yearly_rows), width="stretch", hide_index=True)
 
             start_dates_cagr = {
                 "1y": end_date - pd.DateOffset(years=1),
@@ -340,7 +340,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                 cagr_rows.append({"Period": label, "From": sd.date(), "To": end_date.date(),
                                    "CAGR": f"{cagr:.2%}"})
             st.subheader("CAGR (Compound Annual Growth Rate)")
-            st.dataframe(pd.DataFrame(cagr_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(cagr_rows), width="stretch", hide_index=True)
 
             if return_type == "logarithmic":
                 subdf["ret"] = np.log(subdf["adj close"] / subdf["adj close"].shift(1))
@@ -384,7 +384,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                     "Period": label, "From": sd.date(), "To": end_date.date(),
                     "Ann. Avg Return": f"{ann_ret:.2%}", "Ann. Volatility": f"{vol:.2%}",
                 })
-            st.dataframe(pd.DataFrame(rolling_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rolling_rows), width="stretch", hide_index=True)
 
             st.subheader("Annualised Metrics by Look-back Period (as of last full year-end)")
             end_date_ly = subdf[subdf.index.year == (subdf.index.max().year - 1)].index.max()
@@ -403,7 +403,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                     "Period": label, "From": sd.date(), "To": end_date_ly.date(),
                     "Ann. Avg Return": f"{ann_ret:.2%}", "Ann. Volatility": f"{vol:.2%}",
                 })
-            st.dataframe(pd.DataFrame(rolling_ly_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rolling_ly_rows), width="stretch", hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ def render_etf_prices(merged_df, tickers):
 
     st.subheader("Raw Closing Prices")
     with st.expander("Show raw price table"):
-        st.dataframe(merged_df, use_container_width=True, hide_index=True)
+        st.dataframe(merged_df, width="stretch", hide_index=True)
 
     fig_raw, ax_raw = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
@@ -439,7 +439,7 @@ def render_etf_prices(merged_df, tickers):
 
     st.subheader("Normalized Closing Prices (base = 1000)")
     with st.expander("Show normalized price table"):
-        st.dataframe(norm_df, use_container_width=True, hide_index=True)
+        st.dataframe(norm_df, width="stretch", hide_index=True)
 
     fig_norm, ax_norm = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
@@ -521,16 +521,16 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.subheader(f"Min Return ({return_type}, %)")
-        st.dataframe((min_return * 100).round(2).to_frame("Min"), use_container_width=True)
+        st.dataframe((min_return * 100).round(2).to_frame("Min"), width="stretch")
     with col2:
         st.subheader(f"Max Return ({return_type}, %)")
-        st.dataframe((max_return * 100).round(2).to_frame("Max"), use_container_width=True)
+        st.dataframe((max_return * 100).round(2).to_frame("Max"), width="stretch")
     with col3:
         st.subheader(f"Mean Return ({return_type}, %)")
-        st.dataframe((mean_returns * 100).round(2).to_frame("Mean"), use_container_width=True)
+        st.dataframe((mean_returns * 100).round(2).to_frame("Mean"), width="stretch")
     with col4:
         st.subheader("Std Dev (%)")
-        st.dataframe((returns_std_dev * 100).round(2).to_frame(f"Std Dev ({return_type})"), use_container_width=True)
+        st.dataframe((returns_std_dev * 100).round(2).to_frame(f"Std Dev ({return_type})"), width="stretch")
 
     single_asset_sortino = {}
     for t in tickers:
@@ -542,14 +542,14 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
     st.subheader("Per-Asset Sortino Ratio (annualised)")
     st.dataframe(
         pd.DataFrame.from_dict(single_asset_sortino, orient="index", columns=["Sortino"]).round(3),
-        use_container_width=True
+        width="stretch"
     )
 
     st.subheader("Covariance Matrix (used for optimization — simple returns)")
-    st.dataframe(portfolio_cov_matrix, use_container_width=True)
+    st.dataframe(portfolio_cov_matrix, width="stretch")
 
     st.subheader("Correlation Matrix (used for optimization — simple returns)")
-    st.dataframe(portfolio_returns_simple.corr(), use_container_width=True)
+    st.dataframe(portfolio_returns_simple.corr(), width="stretch")
 
     fig_corr, ax_corr = plt.subplots(figsize=(8, 5))
     sns.heatmap(portfolio_returns_simple.corr(), annot=True, cmap="coolwarm", center=0, ax=ax_corr)
