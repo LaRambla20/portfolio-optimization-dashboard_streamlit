@@ -4,12 +4,13 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 
 ## Features
 
-- **Efficient Frontier** — Monte Carlo simulation and SciPy optimization (SLSQP)
-- **Risk metrics** — Sharpe ratio, Sortino ratio, Max Drawdown, VaR, CVaR
-- **Per-ETF analytics** — CAGR, simple/log returns, rolling metrics, cumulative return charts
-- **Rolling returns** — 1/5/10-year moving windows for individual assets and portfolio
-- **Data download** — Built-in yfinance downloader with progress streaming
-- **Flexible inputs** — Configurable portfolio weights, return type, confidence level, date filter
+- **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP)
+- **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
+- **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
+- **Rolling returns** — 1/5/10-year moving windows for individual assets and the portfolio
+- **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
+- **Data download** — built-in yfinance downloader with progress streaming
+- **Flexible inputs** — configurable portfolio weights, return type, confidence level, date filter
 
 ## Setup
 
@@ -40,6 +41,12 @@ A Playwright end-to-end test drives the full dashboard in a real browser. Start 
 
 This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
 
+For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
+
+```bash
+HEADLESS=1 .venv\Scripts\python test_dashboard.py
+```
+
 ## Project Structure
 
 ```
@@ -47,9 +54,10 @@ efficient_frontier_app/
 ├── efficient_frontier_app.py   # Entry point — sidebar, orchestration
 ├── portfolio_calculations.py   # Pure math: optimization, Monte Carlo, VaR/CVaR
 ├── data_handling.py            # CSV loading, merging, return computation
-└── ui_components.py            # Section renderers (8 sections)
+├── ui_components.py            # Section renderers (8 sections)
+└── descriptions.py             # Per-section "How to read this section" guides
 
-individual_indices_data/        # Downloaded CSVs (gitignored, created on first download)
+individual_indices_data/        # ETF CSVs (pre-loaded samples included; downloader writes here)
 ```
 
 ## Data Format
@@ -67,4 +75,4 @@ CSVs must be named `{ticker}_data_{period}.csv` (e.g. `IWDA.AS_data_daily.csv`) 
 | 4 | Returns & Statistics | Covariance/correlation matrices, return distributions |
 | 5 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) |
 | 6 | SciPy EF | Optimized efficient frontier via SLSQP |
-| 7 | VaR Analysis | Parametric VaR, CVaR, Monte Carlo VaR frontier |
+| 7 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics |
