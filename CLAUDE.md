@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- **No tests, build system, or linter** are configured.
+- **No build system or linter.** A Playwright end-to-end test exists — see **Testing**.
 
 **Setup (first time):**
 ```bash
@@ -28,6 +28,10 @@ python -m venv .venv
 .venv\Scripts\python test_dashboard.py
 ```
 
+For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python test_dashboard.py` (plain `headless=False` hangs when not driven by a human).
+
+> **Gotcha:** Streamlit caches imported modules in memory, so a still-running `streamlit.exe` serves **stale code** after you edit `ui_components.py`/etc. After edits, kill all `streamlit.exe`, confirm port 8501 has no LISTENING socket, then restart before re-testing.
+
 Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all 8 section headers render plus portfolio card metrics. Screenshots are saved to `test_screenshots/` (gitignored).
 
 **Install Playwright** (already in venv; only needed once on a fresh clone):
@@ -49,12 +53,13 @@ git -c http.sslBackend=schannel push
 
 ## Architecture
 
-Modular Streamlit dashboard split into 4 files inside `efficient_frontier_app/`.
+Modular Streamlit dashboard split into 5 files inside `efficient_frontier_app/`.
 - **`efficient_frontier_app/efficient_frontier_app.py`** — main entry point: sidebar inputs, derived parameters, orchestrates data loading and UI rendering.
 - **`efficient_frontier_app/portfolio_calculations.py`** — pure math: portfolio performance, optimization (SciPy), Monte Carlo simulation, VaR calculations.
 - **`efficient_frontier_app/data_handling.py`** — data operations: CSV loading, validation, price spike checks, merged dataframe building, return computations. Uses `@st.cache_data`.
 - **`efficient_frontier_app/ui_components.py`** — UI renderers: 8 section functions (`render_load_etf_data`, `render_per_etf_analytics`, `render_etf_prices`, `render_returns_statistics`, `render_monte_carlo`, `render_scipy_ef`, `render_var_analysis`, `render_rolling_returns`) plus shared helpers (`collect_portfolio_info`, `display_portfolio_cards`). All data passed as explicit parameters (C-like style).
-(No legacy files currently on disk — the repo contains only the 4-file modular app.)
+- **`efficient_frontier_app/descriptions.py`** — single source of truth for the per-section "How to read this section" expanders (concept → markdown with KaTeX formulas); rendered via `render_section_help`.
+(No legacy files currently on disk — the repo contains only the 5-file modular app.)
 
 ### Critical Return Type Split
 
@@ -69,16 +74,18 @@ Key variables for optimization:
 - `portfolio_mean_returns` — mean of simple returns
 - `portfolio_cov_matrix` — covariance of simple returns
 
+**Annualisation (textbook MPT, linear):** annual return = `mean × N`, annual volatility = `std × √N` (N = periods/year: 252/52/12). This is an *arithmetic/expected* return, distinct from the geometric CAGR shown in §2.
+
 ### Section Structure
 
 1. **Load ETF Data** — validates CSVs, checks price spikes, shows data availability gauge
-2. **Per-ETF Analytics** — CAGR, simple/log returns, rolling metrics, **Max Drawdown** (always displays simple returns for consistency)
-3. **Build Merged Dataframe** — inner join of asset prices, normalized charts
+2. **Per-ETF Analytics** — CAGR, simple/calendar-year returns, "Annualised Metrics by Look-back Period", **Max Drawdown** (always simple returns for consistency)
+3. **ETF Prices** — raw and normalized (base = 1000) price charts (merged df is built upstream via inner join)
 3b. **Rolling Returns** — moving-window returns (1/5/10 years) for individual assets and portfolio allocation
 4. **Returns & Statistics** — covariance/correlation matrices (from simple returns), daily returns plot
 5. **Monte Carlo Efficient Frontier** — random portfolio simulation, Sortino ratios
 6. **SciPy Efficient Frontier** — optimization via `scipy.optimize.minimize`, efficient frontier line
-7. **VaR Analysis** — parametric VaR, **CVaR (Conditional Value at Risk)**, Monte Carlo VaR frontier
+7. **VaR Analysis** — per-period parametric (drift-free `σ·z`) and historical VaR/CVaR shown side by side, plus skew/excess-kurtosis fat-tail diagnostics. Historical figures guarded by a data-sufficiency check (`n_tail = round((1-alpha)*n)`). **No VaR frontier** (dropped: drift-free VaR ∝ volatility, so it was redundant with §6).
 
 ### Data Format
 
@@ -88,6 +95,11 @@ CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (peri
 
 - **`cvar(returns, alpha)` expects the tail quantile** (e.g., `alpha=0.05` for 95% CVaR), NOT the confidence level (`0.95`). The sidebar `alpha` is the confidence level — pass `1 - alpha` to `cvar()`.
 - **Sign convention (loss = positive)**: VaR and `cvar()` (CVaR) report losses as **positive** numbers. §7 shows per-period parametric (drift-free `σ·z`) and historical VaR/CVaR side by side; the latter are guarded by a data-sufficiency check (`n_tail = round((1-alpha)*n)`). CVaR for the portfolio cards is computed once, historically, at display time in `display_portfolio_cards(portfolios, alpha)`, so the whole app uses a single CVaR definition and sign.
+- **Monte Carlo weights** use `np.random.dirichlet(np.ones(n))` for *uniform* simplex coverage — do **not** revert to normalising `np.random.random(n)` (biases toward equal weights). `np.random.seed(777)` (in the entry point) makes runs deterministic.
+
+### Keeping descriptions in sync
+
+When you change *how* a metric is computed, update its matching entry in `descriptions.py` — the per-section "How to read this section" text states the formula/assumptions and will otherwise silently drift from the code.
 
 ### Key Functions
 
