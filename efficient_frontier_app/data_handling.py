@@ -57,6 +57,7 @@ def check_price_spikes(tickers, folder_path, filename_suffix, filter_date_string
 def compute_data_availability(tickers, folder_path, filename_suffix, filter_date_string):
     ticker_starts = []
     ticker_ends = []
+    seven_day_tickers = []
     for ticker in tickers:
         fp = os.path.join(folder_path, ticker + filename_suffix)
         df = pd.read_csv(fp, usecols=["date"])
@@ -64,11 +65,16 @@ def compute_data_availability(tickers, folder_path, filename_suffix, filter_date
         df = df[df["date"] <= filter_date_string]
         ticker_starts.append(df["date"].min())
         ticker_ends.append(df["date"].max())
+        # Assets trading 7 days/week (e.g. crypto) have substantial weekend dates; equity ETFs ~none.
+        if len(df) and (df["date"].dt.dayofweek >= 5).mean() > 0.10:
+            seven_day_tickers.append(ticker)
 
     common_start = max(ticker_starts)
     common_end = min(ticker_ends)
     total_days = max((common_end - common_start).days, 0)
     total_years = total_days / 365.25
+    # Mixed-calendar baskets (some 7-day, some 5-day) lose weekend moves to the inner join.
+    mixed_calendar = 0 < len(seven_day_tickers) < len(tickers)
 
     return {
         "common_start": common_start,
@@ -76,6 +82,8 @@ def compute_data_availability(tickers, folder_path, filename_suffix, filter_date
         "total_years": total_years,
         "ticker_starts": ticker_starts,
         "ticker_ends": ticker_ends,
+        "seven_day_tickers": seven_day_tickers,
+        "mixed_calendar": mixed_calendar,
     }
 
 

@@ -45,6 +45,9 @@ $$\text{start}=\max_i(\text{start}_i), \qquad \text{end}=\min_i(\text{end}_i)$$
 
 *What it means for you:* a portfolio can only be compared over dates where *every* asset has
 data. The asset with the shortest history (the "binding" one) sets how far back you can look.
+The window also keeps only dates shared by all assets, so if you mix a 7-day market (crypto) with
+5-day markets (stock ETFs), the crypto's weekend moves get folded into the next shared trading
+day — making its daily figures slightly approximate.
 
 *Why it's useful:* it tells you how much real, overlapping history your analysis rests on —
 a frontier built on 11 months of common data is far less trustworthy than one built on 10 years.
@@ -150,7 +153,9 @@ the worst possible moment and held through the bottom — the gut-check of "how 
 
 *Why it's useful:* volatility treats ups and downs the same, but investors actually fear the
 downs. Max drawdown captures the deepest hole you'd have had to sit through, which is often what
-decides whether someone can stick with a strategy.
+decides whether someone can stick with a strategy. (For a portfolio it's measured on a
+constant-weight series — i.e. rebalancing to target weights each period — so a real buy-and-hold
+mix that drifts could behave differently.)
 """,
 
     "cumulative_return": r"""
@@ -382,7 +387,8 @@ where $q_\alpha$ = the cut-off return marking the worst $\alpha$ of outcomes (e.
 of days average a −4% return, the 95% CVaR is 4%.
 
 *Why it's useful:* Value at Risk only tells you the *threshold* of a bad outcome; CVaR tells you
-how painful it is once you're past that threshold — a more honest picture of tail risk.
+how painful it is once you're past that threshold — a more honest picture of tail risk. (At
+portfolio level it's computed on a constant-weight, daily-rebalanced return series.)
 """,
 
     # ── §6 — SciPy Efficient Frontier ────────────────────────────────────────

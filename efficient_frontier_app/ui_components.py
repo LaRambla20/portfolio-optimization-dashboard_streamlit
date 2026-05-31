@@ -89,7 +89,7 @@ def display_portfolio_cards(portfolios, alpha):
                 "Max Drawdown",
                 f"{p.get('max_dd', 0):.2%}",
                 help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
-                     "not annualised.",
+                     "not annualised. Assumes constant weights (daily rebalancing), not buy-and-hold.",
             )
             # CVaR computed once here, at the user's chosen confidence level, from the portfolio's
             # own return series (single CVaR definition / sign across the whole app: positive = loss).
@@ -100,7 +100,8 @@ def display_portfolio_cards(portfolios, alpha):
                 f"{cvar_val:.2%}",
                 help="Expected shortfall: the average loss on the worst (1−confidence) slice of "
                      "individual periods (e.g. days). A per-period figure — not annualised — so it "
-                     "sits on a shorter horizon than the annual return and volatility above.",
+                     "sits on a shorter horizon than the annual return and volatility above. "
+                     "Computed on a constant-weight (daily-rebalanced) portfolio.",
             )
             if p.get("var") is not None:
                 st.metric(
@@ -261,6 +262,17 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
     )
 
     components.html(html_gauge, height=SVG_H + 24, scrolling=False)
+
+    if data_availability.get("mixed_calendar"):
+        seven = ", ".join(f"**{t}**" for t in data_availability["seven_day_tickers"])
+        st.caption(
+            f"📅 Calendar note: {seven} trade 7 days a week while the other assets trade ~5. To compare "
+            "them, the analysis keeps only the dates all assets share, so weekend moves of the 7-day "
+            "asset(s) are absorbed into the next shared day. Their daily volatility and correlations are "
+            "therefore slightly approximate — switch the data period to weekly or monthly for cleaner "
+            "mixed-calendar figures."
+        )
+
     st.divider()
 
 
