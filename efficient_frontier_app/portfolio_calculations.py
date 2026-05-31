@@ -10,9 +10,11 @@ from scipy import stats
 
 
 def portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor):
-    # Note: Uses arithmetic mean annualisation (common approximation). For exact geometric mean,
-    # full return series would be needed to compute prod(1 + r_i)^(n/T) - 1.
-    average = (1 + np.sum(mean_returns * weights)) ** annualisation_factor - 1
+    # Textbook MPT annualisation: the arithmetic mean scales linearly with the horizon
+    # (mu_ann = mu * T), consistent with variance scaling linearly (sigma_ann = sigma * sqrt(T)).
+    # This keeps the return and risk axes on the same (additive) convention. Note this is an
+    # expected/arithmetic annual return, distinct from the geometric CAGR shown in Section 2.
+    average = np.sum(mean_returns * weights) * annualisation_factor
     std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(annualisation_factor)
     return std, average
 

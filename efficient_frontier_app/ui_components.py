@@ -32,6 +32,7 @@ from portfolio_calculations import (
     max_drawdown,
 )
 from data_handling import evaluate_simple_return, evaluate_CAGR, evaluate_return_metrics
+from descriptions import render_section_help
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -116,7 +117,12 @@ def display_portfolio_cards(portfolios):
     for p in portfolios:
         with st.expander(f"{p['name']}", expanded=False):
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Ann. Return",   f"{p['ret']:.2%}")
+            c1.metric(
+                "Average annual return",
+                f"{p['ret']:.2%}",
+                help="Average return per year, estimated from daily returns — the same figure "
+                     "used on the efficient-frontier chart and to compare portfolios.",
+            )
             c2.metric("Ann. Volatility", f"{p['std_dev']:.2%}")
             c3.metric("Sharpe Ratio",  f"{p['sharpe']:.3f}")
             sortino_val = p.get("sortino")
@@ -148,6 +154,11 @@ def display_portfolio_cards(portfolios):
 
 def render_load_etf_data(tickers, spike_warnings, data_availability):
     st.header("1. Load ETF Data")
+    render_section_help(
+        "This section loads your price data and checks it is usable — flagging suspicious "
+        "jumps and showing how much history all your assets share.",
+        ["price_spikes", "data_window"],
+    )
 
     if spike_warnings:
         tickers_flagged = ", ".join(f"**{t}**" for t in spike_warnings)
@@ -281,6 +292,12 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
 def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
                               return_type, annualisation_factor):
     st.header("2. Per-ETF Analytics")
+    render_section_help(
+        "This section looks at each ETF on its own: how much it returned, how much it swung, "
+        "and its worst fall — so you understand each holding before combining them.",
+        ["simple_return", "calendar_year_return", "cagr", "avg_annual_return",
+         "annual_volatility", "max_drawdown", "cumulative_return", "lookback_annual_metrics"],
+    )
 
     for ticker in tickers:
         subdf = merged_df[["date", ticker]].copy().rename(columns={ticker: "adj close"})
@@ -342,11 +359,16 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
 
             st.subheader("Annualised Metrics (simple returns, full history)")
             simple_ret = subdf["adj close"].pct_change().dropna()
-            ann_mean = (1 + simple_ret.mean()) ** annualisation_factor - 1
+            ann_mean = simple_ret.mean() * annualisation_factor
             ann_std = simple_ret.std() * np.sqrt(annualisation_factor)
             mdd = max_drawdown(simple_ret)
             col1, col2, col3 = st.columns(3)
-            col1.metric("Annualised Avg Return", f"{ann_mean:.2%}")
+            col1.metric(
+                "Average annual return",
+                f"{ann_mean:.2%}",
+                help="Average return per year, estimated from daily returns — the same figure "
+                     "used on the efficient-frontier chart and to compare portfolios.",
+            )
             col2.metric("Annualised Volatility", f"{ann_std:.2%}")
             col3.metric("Max Drawdown", f"{mdd:.2%}")
 
@@ -361,11 +383,11 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
             st.pyplot(fig_cum)
             plt.close(fig_cum)
 
-            st.subheader("Rolling Annualised Metrics (from today)")
+            st.subheader("Annualised Metrics by Look-back Period (as of today)")
             rolling_rows = []
             for label, sd in start_dates_cagr.items():
                 simple_ret = subdf["adj close"].loc[sd:end_date].pct_change().dropna()
-                ann_ret = (1 + simple_ret.mean()) ** annualisation_factor - 1
+                ann_ret = simple_ret.mean() * annualisation_factor
                 vol = simple_ret.std() * np.sqrt(annualisation_factor)
                 rolling_rows.append({
                     "Period": label, "From": sd.date(), "To": end_date.date(),
@@ -373,7 +395,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                 })
             st.dataframe(pd.DataFrame(rolling_rows), use_container_width=True, hide_index=True)
 
-            st.subheader("Rolling Annualised Metrics (from end of last full year)")
+            st.subheader("Annualised Metrics by Look-back Period (as of last full year-end)")
             end_date_ly = subdf[subdf.index.year == (subdf.index.max().year - 1)].index.max()
             start_dates_ly = {
                 "1y": end_date_ly - pd.DateOffset(years=1),
@@ -384,7 +406,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
             rolling_ly_rows = []
             for label, sd in start_dates_ly.items():
                 simple_ret = subdf["adj close"].loc[sd:end_date_ly].pct_change().dropna()
-                ann_ret = (1 + simple_ret.mean()) ** annualisation_factor - 1
+                ann_ret = simple_ret.mean() * annualisation_factor
                 vol = simple_ret.std() * np.sqrt(annualisation_factor)
                 rolling_ly_rows.append({
                     "Period": label, "From": sd.date(), "To": end_date_ly.date(),
@@ -399,6 +421,11 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
 
 def render_etf_prices(merged_df, tickers):
     st.header("3. ETF Prices")
+    render_section_help(
+        "This section plots prices so you can compare how your assets moved — both in real "
+        "terms and rebased to a common starting point.",
+        ["normalized_prices"],
+    )
 
     st.subheader("Raw Closing Prices")
     with st.expander("Show raw price table"):
@@ -440,6 +467,11 @@ def render_etf_prices(merged_df, tickers):
 def render_rolling_returns(rolling_returns, portfolio_rolling_returns, tickers,
                             rolling_window_years, return_type):
     st.header("3b. Rolling Returns")
+    render_section_help(
+        "This section shows returns over long rolling windows, so you can see what an investor "
+        "would have earned holding for 1, 5 or 10 years starting at any point in time.",
+        ["rolling_returns_asset", "rolling_returns_portfolio"],
+    )
     if rolling_returns.shape[0] <= rolling_window_years:
         st.warning(f"Insufficient data for {rolling_window_years}-year rolling window.")
         return
@@ -484,6 +516,11 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
                                portfolio_cov_matrix, tickers, return_type, annualisation_factor,
                                risk_free_rate):
     st.header("4. Returns & Statistics")
+    render_section_help(
+        "This section measures how rewarding and how risky your assets have been, and crucially "
+        "how they move together — the raw material for diversification.",
+        ["return_stats", "sortino", "covariance", "correlation"],
+    )
 
     min_return = returns.min()
     max_return = returns.max()
@@ -509,7 +546,7 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
         w_single = np.zeros(len(tickers))
         w_single[tickers.index(t)] = 1.0
         dd = portfolio_downside_deviation(w_single, portfolio_returns_simple, annualisation_factor)
-        ret_single = (1 + portfolio_mean_returns[t]) ** annualisation_factor - 1
+        ret_single = portfolio_mean_returns[t] * annualisation_factor
         single_asset_sortino[t] = (ret_single - risk_free_rate) / dd if dd > 0 else np.nan
     st.subheader("Per-Asset Sortino Ratio (annualised)")
     st.dataframe(
@@ -547,6 +584,12 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                         custom_target_ret, custom_target_vol, my_portfolio_allocation):
     st.header("5. Monte Carlo Efficient Frontier (Volatility)")
+    render_section_help(
+        "This section randomly simulates thousands of portfolios to map the trade-off between "
+        "risk and return, and highlights a few notable ones.",
+        ["monte_carlo", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
+         "efficient_frontier", "marked_portfolios", "max_drawdown", "cvar"],
+    )
 
     results_mc, weights_mc = random_portfolios(num_portfolios, portfolio_mean_returns,
                                                 portfolio_cov_matrix, risk_free_rate, annualisation_factor)
@@ -651,7 +694,7 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
                 portfolios_mc.append(p)
 
     single_etfs_std_dev = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret = (1 + portfolio_mean_returns) ** annualisation_factor - 1
+    single_etfs_ret = portfolio_mean_returns * annualisation_factor
     ax_mc.scatter(single_etfs_std_dev, single_etfs_ret, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):
         ax_mc.annotate(txt, (single_etfs_std_dev.iloc[i], single_etfs_ret.iloc[i]),
@@ -679,7 +722,7 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
         ax_mc_so.scatter(p["std_dev"], p["ret"], marker=marker, color=color,
                          s=size, label=p["name"], zorder=5)
     single_etfs_std_dev_so = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret_so = (1 + portfolio_mean_returns) ** annualisation_factor - 1
+    single_etfs_ret_so = portfolio_mean_returns * annualisation_factor
     ax_mc_so.scatter(single_etfs_std_dev_so, single_etfs_ret_so, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):
         ax_mc_so.annotate(txt, (single_etfs_std_dev_so.iloc[i], single_etfs_ret_so.iloc[i]),
@@ -703,6 +746,12 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                      my_portfolio_allocation):
     st.header("6. Scipy Efficient Frontier (Volatility)")
+    render_section_help(
+        "This section mathematically solves for the best portfolios — rather than guessing "
+        "randomly — and draws the efficient frontier: the best return achievable at each level of risk.",
+        ["scipy_optimization", "efficient_frontier_line", "avg_annual_return", "annual_volatility",
+         "sharpe", "sortino", "marked_portfolios", "max_drawdown", "cvar"],
+    )
 
     results_sc, _ = random_portfolios(num_portfolios, portfolio_mean_returns,
                                        portfolio_cov_matrix, risk_free_rate, annualisation_factor)
@@ -810,7 +859,7 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
         st.warning("Cannot plot efficient frontier: Min Volatility or Max Return optimization failed.")
 
     single_etfs_std_dev = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret = (1 + portfolio_mean_returns) ** annualisation_factor - 1
+    single_etfs_ret = portfolio_mean_returns * annualisation_factor
     ax_sc.scatter(single_etfs_std_dev, single_etfs_ret, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):
         ax_sc.annotate(txt, (single_etfs_std_dev.iloc[i], single_etfs_ret.iloc[i]), xytext=(10, 0), textcoords="offset points", fontsize=9)
@@ -842,7 +891,7 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
         ax_sc_so.scatter(p["std_dev"], p["ret"], marker=marker, color=color,
                          s=size, label=p["name"], zorder=5)
     single_etfs_std_dev_sc = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret_sc = (1 + portfolio_mean_returns) ** annualisation_factor - 1
+    single_etfs_ret_sc = portfolio_mean_returns * annualisation_factor
     ax_sc_so.scatter(single_etfs_std_dev_sc, single_etfs_ret_sc, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):
         ax_sc_so.annotate(txt, (single_etfs_std_dev_sc.iloc[i], single_etfs_ret_sc.iloc[i]),
@@ -870,6 +919,11 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
                          tickers, annualisation_factor, risk_free_rate, num_portfolios,
                          eps, alpha, custom_target_ret, custom_target_VaR, my_portfolio_allocation):
     st.header("7. Value at Risk (VaR) Analysis")
+    render_section_help(
+        "This section estimates how much you could lose on a bad day or in a bad tail of "
+        "outcomes, using Value at Risk and its sibling CVaR.",
+        ["zscore", "var_parametric", "cvar", "return_distribution", "var_frontier", "marked_portfolios"],
+    )
 
     z_score = stats.norm.ppf(1 - alpha)
     my_portfolio_weights = np.array(list(my_portfolio_allocation.values()), dtype=np.float64)
@@ -996,7 +1050,7 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
                 portfolios_var.append(p)
 
     single_etfs_std_dev = portfolio_returns_simple.std() * np.sqrt(annualisation_factor)
-    single_etfs_ret = (1 + portfolio_mean_returns) ** annualisation_factor - 1
+    single_etfs_ret = portfolio_mean_returns * annualisation_factor
     single_etfs_VaR = single_etfs_std_dev * abs(stats.norm.ppf(1 - alpha)) - single_etfs_ret
     ax_var2.scatter(single_etfs_VaR, single_etfs_ret, marker="o", s=200, zorder=6)
     for i, txt in enumerate(tickers):

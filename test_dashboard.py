@@ -12,6 +12,10 @@ BASE_URL = "http://localhost:8501"
 SCREENSHOT_DIR = "test_screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
+# Set HEADLESS=1 for automated/CI runs (no visible window, more reliable);
+# default is a visible browser with slow_mo so you can watch it locally.
+HEADLESS = os.environ.get("HEADLESS", "0") == "1"
+
 SECTIONS = [
     "1. Load ETF Data",
     "2. Per-ETF Analytics",
@@ -41,7 +45,7 @@ def wait_for_streamlit(page):
 
 def test_dashboard():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=100)
+        browser = p.chromium.launch(headless=HEADLESS, slow_mo=0 if HEADLESS else 100)
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
 
         # ── 1. Load the app ──────────────────────────────────────────────────
@@ -84,23 +88,29 @@ def test_dashboard():
             print(f"  OK: {section}")
 
         # ── 6. Check portfolio cards render in Monte Carlo ───────────────────
+        # NB: target cards by their SUMMARY text. The "How to read this section"
+        # help expanders also contain "My Portfolio" in their body, so a plain
+        # text= / has_text= selector would wrongly match a (collapsed) help expander.
         print("Checking portfolio cards...")
-        page.locator("text=My Portfolio").first.scroll_into_view_if_needed()
+        my_card_summary = page.locator("summary", has_text="My Portfolio").first
+        my_card_summary.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
-        expect(page.locator("text=My Portfolio").first).to_be_visible()
-        expect(page.locator("text=Max Sharpe Portfolio").first).to_be_visible()
-        expect(page.locator("text=Min Volatility Portfolio").first).to_be_visible()
+        expect(my_card_summary).to_be_visible()
+        expect(page.locator("summary", has_text="Max Sharpe Portfolio").first).to_be_visible()
+        expect(page.locator("summary", has_text="Min Volatility Portfolio").first).to_be_visible()
         print("  OK: portfolio cards visible")
 
         # ── 7. Expand a portfolio card and check metrics ─────────────────────
         print("Expanding My Portfolio card...")
-        card = page.locator("details").filter(has_text="My Portfolio").first
+        card = page.locator("details").filter(
+            has=page.locator("summary", has_text="My Portfolio")
+        ).first
         card.scroll_into_view_if_needed()
         card.locator("summary").click()
         page.wait_for_timeout(1000)
         # Metric labels inside st.columns() have overflow:hidden parents so
         # Playwright marks them "hidden" even when rendered — use to_be_attached.
-        expect(page.locator("text=Ann. Return").first).to_be_attached(timeout=10_000)
+        expect(page.locator("text=Average annual return").first).to_be_attached(timeout=10_000)
         expect(page.locator("text=Sharpe Ratio").first).to_be_attached(timeout=5_000)
         expect(page.locator("text=Max Drawdown").first).to_be_attached(timeout=5_000)
         expect(page.locator("text=CVaR Historical").first).to_be_attached(timeout=5_000)

@@ -1,0 +1,494 @@
+"""
+Educational descriptions for every computed quantity in the dashboard.
+
+Single source of truth: each concept maps to one markdown string with a consistent
+three-part shape — *How it's computed* (plain words + a typeset formula and symbol key),
+*What it means for you*, and *Why it's useful*. Sections render the subset they need via
+`render_section_help`, so the text is written once but each section stays self-contained.
+
+Written for a reader with no finance background: jargon is defined where it first appears
+and examples are illustrative (no hard-coded amounts).
+
+Notation used throughout:
+  P_t = price at time t,  r = a period's simple return,  N = periods per year
+  (252 daily, 52 weekly, 12 monthly),  r_f = risk-free rate,  w = portfolio weights.
+"""
+
+import streamlit as st
+
+
+DESCRIPTIONS = {
+
+    # ── §1 — Load ETF Data ───────────────────────────────────────────────────
+    "price_spikes": r"""
+**Price-spike check**
+
+*How it's computed:* we look at each step-to-step price change and flag any bigger than 60%:
+
+$$\left|\frac{P_t}{P_{t-1}} - 1\right| > 0.60$$
+
+*What it means for you:* a single-day move that large is usually a stock split, a data
+glitch, or a genuinely violent move — not normal behaviour. Flagging it lets you check the
+data before trusting the numbers built on top of it.
+
+*Why it's useful:* one bad price can quietly distort every return, volatility and risk
+figure downstream. This is a cheap sanity check on the raw inputs.
+""",
+
+    "data_window": r"""
+**Common data window**
+
+*How it's computed:* each asset has its own start and end date; the shared window runs from
+the **latest** start to the **earliest** end across all your holdings:
+
+$$\text{start}=\max_i(\text{start}_i), \qquad \text{end}=\min_i(\text{end}_i)$$
+
+*What it means for you:* a portfolio can only be compared over dates where *every* asset has
+data. The asset with the shortest history (the "binding" one) sets how far back you can look.
+
+*Why it's useful:* it tells you how much real, overlapping history your analysis rests on —
+a frontier built on 11 months of common data is far less trustworthy than one built on 10 years.
+""",
+
+    # ── §2 — Per-ETF Analytics ───────────────────────────────────────────────
+    "simple_return": r"""
+**Simple return (single period)**
+
+*How it's computed:* the percentage change in price from the start to the end of the period:
+
+$$R = \frac{P_{\text{end}}}{P_{\text{start}}} - 1$$
+
+*What it means for you:* the plain answer to "if I'd bought at the start and sold at the end,
+what would I have made or lost?" — including the full effect of the whole period.
+
+*Why it's useful:* it's the most intuitive return there is, and the building block for
+everything else. The table shows it over several look-back windows so you can see recent vs.
+long-run performance at a glance.
+""",
+
+    "calendar_year_return": r"""
+**Calendar-year return**
+
+*How it's computed:* the same simple return formula, but measured from the end of one calendar
+year to the end of the next:
+
+$$R_{\text{year}} = \frac{P_{\text{Dec 31}}}{P_{\text{Dec 31, prior}}} - 1$$
+
+*What it means for you:* how the asset did in each individual year, the way performance is
+usually quoted in fund fact-sheets.
+
+*Why it's useful:* year-by-year figures reveal consistency. Two funds with the same long-run
+return can feel completely different if one was steady and the other swung between big gains
+and losses.
+""",
+
+    "cagr": r"""
+**CAGR (Compound Annual Growth Rate)**
+
+*How it's computed:* the single steady yearly rate that would have grown the price from its
+start to its end over $n$ years:
+
+$$\text{CAGR} = \left(\frac{P_{\text{end}}}{P_{\text{start}}}\right)^{1/n} - 1$$
+
+*What it means for you:* the return per year this investment *actually* delivered, with
+compounding already baked in — the honest number you'd compare against a savings rate or
+another fund.
+
+*Why it's useful:* it collapses a messy price history into one comparable yearly figure. Note
+it's usually a little **lower** than the *Average annual return* below: CAGR reflects how gains
+and losses really compounded, whereas the average just averages each period's return.
+""",
+
+    "avg_annual_return": r"""
+**Average annual return**
+
+*How it's computed:* take the average of the periodic (e.g. daily) returns and scale it up to
+a year by the number of periods per year:
+
+$$\mu_{\text{ann}} = \bar{r}\times N$$
+
+where $\bar{r}$ = average periodic return and $N$ = periods per year (252 daily, 52 weekly, 12
+monthly).
+
+*What it means for you:* a forward-looking estimate of the typical yearly return, in the form
+the optimizer and the risk/return chart use. It's an *expected* return, not the realized CAGR.
+
+*Why it's useful:* it pairs cleanly with annual volatility (both scale with the same calendar),
+which is exactly what's needed to compare portfolios and build the efficient frontier.
+""",
+
+    "annual_volatility": r"""
+**Annualised volatility (risk)**
+
+*How it's computed:* the standard deviation of the periodic returns — how much they bounce
+around their average — scaled to a year:
+
+$$\sigma_{\text{ann}} = \sigma \times \sqrt{N}$$
+
+where $\sigma$ = standard deviation of periodic returns and $N$ = periods per year. (Risk grows
+with the square root of time, not linearly, which is why we use $\sqrt{N}$.)
+
+*What it means for you:* a rough sense of how wide the swings are. If volatility is 12%, a
+typical year's return lands roughly within ±12% of the average — bigger number, bumpier ride.
+
+*Why it's useful:* it's the standard measure of risk in portfolio theory and the denominator of
+the Sharpe ratio. Lower volatility for the same return means a smoother, more predictable journey.
+""",
+
+    "max_drawdown": r"""
+**Maximum drawdown**
+
+*How it's computed:* track the running peak of your wealth, then find the largest percentage
+drop from any peak to a later low:
+
+$$\text{MDD} = \max_t \frac{\text{peak}_t - W_t}{\text{peak}_t}, \qquad W_t = \prod_{i\le t}(1+r_i)$$
+
+where $W_t$ = cumulative wealth and $\text{peak}_t$ = its highest value so far.
+
+*What it means for you:* the worst peak-to-trough loss you'd have suffered if you'd bought at
+the worst possible moment and held through the bottom — the gut-check of "how bad did it get?"
+
+*Why it's useful:* volatility treats ups and downs the same, but investors actually fear the
+downs. Max drawdown captures the deepest hole you'd have had to sit through, which is often what
+decides whether someone can stick with a strategy.
+""",
+
+    "cumulative_return": r"""
+**Cumulative-return chart**
+
+*How it's computed:* compound the periodic returns into a growing wealth line, shown as total
+gain since the start:
+
+$$\text{Cumulative}_t = \prod_{i \le t}(1+r_i) - 1$$
+
+*What it means for you:* the running story of €1 invested at the start — every dip and recovery,
+not just the endpoints.
+
+*Why it's useful:* a single CAGR number hides the path. The curve shows *when* the gains and
+losses happened, which matters enormously for how an investment actually felt to hold.
+""",
+
+    "lookback_annual_metrics": r"""
+**Annualised metrics by look-back period**
+
+*How it's computed:* the same *Average annual return* and *Annualised volatility* as above, but
+measured over a single backward window of a chosen length (the last 1, 3, 5 years, or full
+history) ending at one fixed anchor date. The window doesn't slide — each row is one number for
+one look-back horizon. (For genuinely sliding, date-by-date windows, see the *Rolling Returns*
+section instead.)
+
+*What it means for you:* how the asset's return and risk looked over recent stretches, rather
+than its entire history — useful because markets change character over time.
+
+*Why it's useful:* an asset's long-run average can mask a very different recent regime. Comparing
+look-back horizons shows whether performance and risk have been improving, deteriorating, or steady.
+""",
+
+    # ── §3 — ETF Prices ──────────────────────────────────────────────────────
+    "normalized_prices": r"""
+**Normalized prices (base = 1000)**
+
+*How it's computed:* divide every price by the asset's first price in the window and multiply by
+1000, so every asset starts at the same point:
+
+$$\tilde{P}_t = \frac{P_t}{P_0}\times 1000$$
+
+*What it means for you:* it answers "if I'd put the same money into each at the start, how would
+they compare today?" — stripping away the fact that one share might cost €5 and another €50,000.
+
+*Why it's useful:* raw price lines are impossible to compare across assets of different prices.
+Rebasing to a common start makes relative performance instantly readable on one chart.
+""",
+
+    # ── §3b — Rolling Returns ────────────────────────────────────────────────
+    "rolling_returns_asset": r"""
+**Rolling returns (per asset)**
+
+*How it's computed:* for every date, the return an investor would have earned over the preceding
+window of length $w$ (e.g. 1, 5 or 10 years):
+
+$$R_t = \frac{P_t}{P_{t-w}} - 1$$
+
+*What it means for you:* instead of one return from a single lucky or unlucky start date, this
+shows the full range of outcomes a holder could have experienced depending on *when* they started.
+
+*Why it's useful:* it exposes how much your result depends on timing. A wide, jumpy band means
+outcomes were very start-date-dependent; a tight band means the holding period was reliably
+rewarding.
+""",
+
+    "rolling_returns_portfolio": r"""
+**Rolling returns (portfolio)**
+
+*How it's computed:* first build your portfolio's return each period by blending the assets at
+your chosen weights, compound that into a portfolio value, then take the same window-over-window
+return:
+
+$$r^{\text{port}}_t = \sum_i w_i\, r_{i,t}, \qquad R_t = \frac{V_t}{V_{t-w}} - 1$$
+
+where $w_i$ = the weight of asset $i$ and $V_t$ = portfolio value.
+
+*What it means for you:* the rolling-window experience of holding *your specific mix*, not the
+individual assets — this assumes the mix is kept at constant weights over time.
+
+*Why it's useful:* it shows whether diversifying actually smoothed the ride: the portfolio band
+is often tighter than any single asset's, which is diversification working in your favour.
+""",
+
+    # ── §4 — Returns & Statistics ────────────────────────────────────────────
+    "return_stats": r"""
+**Minimum / maximum / mean / standard deviation of returns**
+
+*How it's computed:* basic summary statistics of each asset's periodic returns — the smallest,
+largest, average, and spread:
+
+$$\bar{r}=\frac{1}{T}\sum_{t} r_t, \qquad \sigma=\sqrt{\frac{1}{T}\sum_t (r_t-\bar{r})^2}$$
+
+*What it means for you:* the min and max show the best and worst single periods; the mean shows
+the central tendency; the standard deviation shows how scattered returns are around that centre.
+
+*Why it's useful:* these four numbers are a quick fingerprint of an asset's behaviour and the
+inputs from which volatility, correlation and the optimization are built.
+""",
+
+    "sortino": r"""
+**Sortino ratio**
+
+*How it's computed:* like the Sharpe ratio, but it only penalises *downside* movement. The
+denominator (downside deviation) is built from returns below zero:
+
+$$\text{Sortino}=\frac{\mu_{\text{ann}}-r_f}{\sigma_{\text{down}}}, \qquad
+\sigma_{\text{down}}=\sqrt{\tfrac{1}{T}\textstyle\sum_t \min(r_t,0)^2}\times\sqrt{N}$$
+
+where $r_f$ = risk-free rate (the return of a "safe" asset) and $\sigma_{\text{down}}$ = downside
+deviation.
+
+*What it means for you:* reward earned per unit of *bad* risk. Upswings don't count against you
+here — only the losses that actually hurt.
+
+*Why it's useful:* the Sharpe ratio treats a big gain as just as "risky" as a big loss. Sortino
+fixes that, so it's the fairer score for assets with occasional large upside (like crypto).
+""",
+
+    "covariance": r"""
+**Covariance matrix**
+
+*How it's computed:* for every pair of assets, how their returns move together; the diagonal is
+each asset's own variance (volatility squared):
+
+$$\Sigma_{ij} = \frac{1}{T}\sum_t (r_{i,t}-\bar{r}_i)(r_{j,t}-\bar{r}_j)$$
+
+*What it means for you:* a positive value means two assets tend to rise and fall together; a
+negative value means one tends to zig when the other zags.
+
+*Why it's useful:* it's the mathematical engine of diversification. The optimizer uses this matrix
+to find mixes whose combined swings partly cancel out — lowering risk without necessarily
+lowering return.
+""",
+
+    "correlation": r"""
+**Correlation matrix**
+
+*How it's computed:* the covariance rescaled to a tidy −1…+1 range by dividing by the two assets'
+volatilities:
+
+$$\rho_{ij} = \frac{\Sigma_{ij}}{\sigma_i\,\sigma_j}$$
+
+*What it means for you:* +1 means two assets move in lockstep, 0 means no relationship, −1 means
+they move exactly opposite. The heatmap shows this at a glance.
+
+*Why it's useful:* combining assets with low or negative correlation is the single most powerful
+way to cut portfolio risk. Two strong-but-uncorrelated assets make a much smoother portfolio than
+either alone.
+""",
+
+    # ── §5 — Monte Carlo Efficient Frontier ──────────────────────────────────
+    "monte_carlo": r"""
+**Monte Carlo simulation (random portfolios)**
+
+*How it's computed:* generate thousands of random weight combinations (each set scaled to sum to
+100%), and for every one compute its annual return, volatility and Sharpe ratio:
+
+$$w_i \ge 0, \qquad \sum_i w_i = 1$$
+
+*What it means for you:* instead of guessing a few mixes, we scatter thousands across the map of
+possibilities, so you can *see* the whole cloud of risk/return trade-offs your assets allow.
+
+*Why it's useful:* the shape of the cloud reveals the best achievable trade-offs and where your
+own portfolio sits relative to them — without needing any equations, just the picture.
+""",
+
+    "sharpe": r"""
+**Sharpe ratio**
+
+*How it's computed:* the portfolio's annual return above the risk-free rate, divided by its
+volatility:
+
+$$\text{Sharpe}=\frac{\mu_{\text{ann}}-r_f}{\sigma_{\text{ann}}}$$
+
+where $r_f$ = risk-free rate (what a "safe" asset pays) and $\sigma_{\text{ann}}$ = annual
+volatility.
+
+*What it means for you:* how much reward you earned for each unit of risk taken. As a rough guide,
+around 1 is decent and 2 is very good.
+
+*Why it's useful:* it lets you compare wildly different investments fairly — a calm bond fund and
+a volatile crypto position are judged by the same risk-adjusted yardstick. The colour scale on the
+chart is this ratio.
+""",
+
+    "efficient_frontier": r"""
+**Efficient frontier**
+
+*How it's computed:* among all the simulated portfolios, the frontier is the upper-left edge of
+the cloud — for each level of risk, the mix that delivered the highest return.
+
+*What it means for you:* every portfolio *on* the frontier is "efficient": you can't get more
+return without taking more risk. Anything *below* the frontier is wasteful — there's a better mix
+with the same risk.
+
+*Why it's useful:* it turns a vague goal ("good returns, not too risky") into a concrete menu. You
+pick your comfort level of risk and read off the best portfolio for it.
+""",
+
+    "marked_portfolios": r"""
+**The highlighted portfolios**
+
+*How they're computed:* among all candidate portfolios we single out a few special ones — the
+lowest-risk mix (**Min Volatility**), the highest-return mix (**Max Return**), the best
+risk-adjusted mixes (**Max Sharpe**, **Max Sortino**), and **My Portfolio** (your actual current
+weights).
+
+*What it means for you:* they're reference points. *Max Sharpe* is the textbook "best bang for your
+risk" portfolio; *Min Volatility* is the calmest; *My Portfolio* shows where you stand among them.
+
+*Why it's useful:* seeing your portfolio plotted next to the optimal ones tells you, at a glance,
+whether you're leaving return on the table or taking on risk you aren't being rewarded for.
+""",
+
+    "cvar": r"""
+**CVaR (Conditional Value at Risk / Expected Shortfall)**
+
+*How it's computed:* look at the worst slice of returns — the tail beyond the chosen confidence
+level — and take their *average*:
+
+$$\text{CVaR}_\alpha = -\,\text{average}\big(r \;\big|\; r \le q_{\alpha}\big)$$
+
+where $q_\alpha$ = the cut-off return marking the worst $\alpha$ of outcomes (e.g. the worst 5%).
+
+*What it means for you:* "when things go badly, how bad is the average bad day?" If the worst 5%
+of days average a −4% return, the 95% CVaR is 4%.
+
+*Why it's useful:* Value at Risk only tells you the *threshold* of a bad outcome; CVaR tells you
+how painful it is once you're past that threshold — a more honest picture of tail risk.
+""",
+
+    # ── §6 — SciPy Efficient Frontier ────────────────────────────────────────
+    "scipy_optimization": r"""
+**Mathematical optimization (SLSQP)**
+
+*How it's computed:* rather than sampling randomly, a solver (Sequential Least-Squares Quadratic
+Programming) computes the exact weights that minimise risk or maximise the Sharpe ratio, subject to
+the weights being positive and summing to 100%.
+
+*What it means for you:* this finds the genuine best portfolios precisely, instead of the
+best-among-the-random-guesses that the Monte Carlo cloud gives.
+
+*Why it's useful:* the random simulation is great for intuition but rarely lands exactly on the
+optimum. The solver pins it down, so the highlighted portfolios here are the true mathematical
+best, not approximations.
+""",
+
+    "efficient_frontier_line": r"""
+**Efficient frontier line**
+
+*How it's computed:* the solver is run repeatedly, each time asked for the lowest-risk portfolio
+that achieves a given target return; stringing those points together draws a smooth curve:
+
+$$\min_{w}\ \sigma_{\text{ann}}(w) \quad \text{subject to}\quad \mu_{\text{ann}}(w)=\text{target}$$
+
+*What it means for you:* the clean curve is the exact boundary of what's possible — the random
+cloud only *approaches* it from below.
+
+*Why it's useful:* it's the precise "menu" of best-possible portfolios. Any realistic portfolio
+sits on or below this line; the closer to the line, the more efficient your mix.
+""",
+
+    # ── §7 — Value at Risk ───────────────────────────────────────────────────
+    "zscore": r"""
+**z-score**
+
+*How it's computed:* the point on a standard bell curve that cuts off the chosen tail. For 95%
+confidence we take the 5% lower tail:
+
+$$z = \Phi^{-1}(1-\alpha)$$
+
+where $\Phi^{-1}$ is the inverse standard-normal (it turns a probability back into a number of
+standard deviations) and $\alpha$ is your confidence level.
+
+*What it means for you:* it's the multiplier that says how many "standard swings" away the bad tail
+sits. For 95% it's about −1.65.
+
+*Why it's useful:* it's the bridge between a confidence level you choose (e.g. 95%) and the
+volatility of your portfolio, which together produce the Value at Risk figure below.
+""",
+
+    "var_parametric": r"""
+**Parametric Value at Risk (VaR)**
+
+*How it's computed:* assuming returns follow a bell curve, VaR combines the z-score, the
+volatility and the average return into a worst-case loss at your confidence level:
+
+$$\text{VaR}_\alpha = \sigma\,|z| - \mu$$
+
+where $\sigma$ = volatility, $\mu$ = average return, $|z|$ = the size of the z-score.
+
+*What it means for you:* "with 95% confidence, I won't lose more than X over this period." A 95%
+VaR of 5% means only about 1 period in 20 should be worse than a 5% loss.
+
+*Why it's useful:* it puts a single, intuitive euro-or-percent figure on downside risk — widely
+used by banks and funds. Caveat: it assumes a bell curve, so it can *understate* risk for
+fat-tailed assets like crypto, where extreme days happen more often than the curve predicts.
+""",
+
+    "return_distribution": r"""
+**Return distribution & tail plot**
+
+*How it's computed:* we histogram your portfolio's actual returns and overlay a fitted bell curve;
+the shaded red region is the worst tail beyond the VaR threshold.
+
+*What it means for you:* it shows how often each size of gain or loss occurred, and where the
+"danger zone" of bad outcomes begins.
+
+*Why it's useful:* it lets you eyeball whether the bell-curve assumption behind parametric VaR is
+reasonable. If the real bars stick out well past the curve on the left, true tail risk is worse
+than the formula suggests.
+""",
+
+    "var_frontier": r"""
+**VaR efficient frontier**
+
+*How it's computed:* the same thousands of simulated portfolios as the Monte Carlo section, but
+plotted with **Value at Risk** on the horizontal axis instead of volatility.
+
+*What it means for you:* it maps the trade-off between expected return and worst-case loss, and
+highlights the mix with the smallest VaR for a given return.
+
+*Why it's useful:* some investors care less about everyday bumpiness (volatility) and more about
+how bad a rare bad outcome could be. This frontier optimises for that specific fear.
+""",
+}
+
+
+def render_section_help(overview, keys):
+    """Render a collapsed 'How to read this section' expander.
+
+    `overview` is a one-line plain-language summary of the section; `keys` is the
+    ordered list of DESCRIPTIONS entries to show (self-contained per section).
+    """
+    with st.expander("📖 How to read this section", expanded=False):
+        st.markdown(f"_{overview}_")
+        for k in keys:
+            md = DESCRIPTIONS.get(k)
+            if md:
+                st.markdown(md)
