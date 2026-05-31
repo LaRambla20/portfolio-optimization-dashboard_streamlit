@@ -74,9 +74,11 @@ def test_dashboard():
             print(f"  OK: {section}")
 
         # ── 4. Check data availability gauge rendered (SVG) ──────────────────
+        # The gauge is an inline SVG rendered via st.markdown (no longer an iframe,
+        # since components.html was dropped). Locate it by the gradient id it defines.
         print("Checking data availability gauge...")
-        expect(page.locator("iframe").first).to_be_visible(timeout=10_000)
-        print("  OK: gauge iframe present")
+        expect(page.locator("svg:has(linearGradient#gaugeGrad)").first).to_be_attached(timeout=10_000)
+        print("  OK: gauge SVG present")
 
         # ── 5. Scroll through sections and screenshot ────────────────────────
         print("Scrolling and screenshotting sections...")
