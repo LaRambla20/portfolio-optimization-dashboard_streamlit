@@ -4,7 +4,6 @@ All section renderers receive data as explicit parameters (C-like style).
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -255,13 +254,12 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
         + "</svg>"
     )
 
-    html_gauge = (
-        f'<html><body style="margin:0;padding:4px 0 0 0;background:transparent;">'
-        f'{svg}'
-        f'</body></html>'
-    )
-
-    components.html(html_gauge, height=SVG_H + 24, scrolling=False)
+    # st.html (Streamlit 1.58) replaces the deprecated components.html. It renders inline
+    # and sanitizes the markup, so pass the SVG in a plain div — a full <html><body>
+    # document wrapper (fine for the old iframe-based components.html) gets stripped,
+    # taking the SVG with it. The SVG carries its own width/height so it self-sizes.
+    html_gauge = f'<div style="padding:4px 0 0 0;">{svg}</div>'
+    st.html(html_gauge)
 
     if data_availability.get("mixed_calendar"):
         seven = ", ".join(f"**{t}**" for t in data_availability["seven_day_tickers"])
