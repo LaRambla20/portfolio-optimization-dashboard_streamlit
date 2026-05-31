@@ -101,6 +101,13 @@ CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (peri
 
 When you change *how* a metric is computed, update its matching entry in `descriptions.py` — the per-section "How to read this section" text states the formula/assumptions and will otherwise silently drift from the code.
 
+### Rendering gotchas (silent failures — verify in a browser, not just the source)
+
+Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58).
+
+- **Inline SVG (the data-availability gauge in `render_load_etf_data`) must use `st.markdown(html, unsafe_allow_html=True)`.** Do **not** use `st.html` — it runs input through DOMPurify (default config), which strips `<svg>` entirely, so the gauge renders as *nothing* with no error. `st.components.v1.html` (the old approach) is removed after 2026-06-01. `st.iframe` only embeds a URL, not an HTML/SVG string. After any change here, confirm the SVG is actually in the DOM (e.g. Playwright `svg:has(linearGradient#gaugeGrad)`); the deprecation-warning-gone check alone is not enough.
+- **KaTeX `$$…$$` blocks in `descriptions.py` must sit on a single source line.** A hard line break inside the block makes Streamlit's markdown treat it as a paragraph break, splitting the delimiters so the formula fails to parse (renders as raw red error text). The test's gauge check locates the inline SVG (not an iframe) for this reason.
+
 ### Key Functions
 
 **data_handling.py:**
