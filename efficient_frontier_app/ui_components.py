@@ -254,12 +254,12 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
         + "</svg>"
     )
 
-    # st.html (Streamlit 1.58) replaces the deprecated components.html. It renders inline
-    # and sanitizes the markup, so pass the SVG in a plain div — a full <html><body>
-    # document wrapper (fine for the old iframe-based components.html) gets stripped,
-    # taking the SVG with it. The SVG carries its own width/height so it self-sizes.
+    # Render the gauge SVG inline. We can't use st.html here: its DOMPurify pass (with
+    # Streamlit's default config) strips <svg>, leaving nothing. st.markdown with
+    # unsafe_allow_html keeps the SVG, renders inline (no iframe), and avoids the
+    # deprecated components.html. The SVG carries its own width/height so it self-sizes.
     html_gauge = f'<div style="padding:4px 0 0 0;">{svg}</div>'
-    st.html(html_gauge)
+    st.markdown(html_gauge, unsafe_allow_html=True)
 
     if data_availability.get("mixed_calendar"):
         seven = ", ".join(f"**{t}**" for t in data_availability["seven_day_tickers"])
