@@ -263,8 +263,7 @@ inputs from which volatility, correlation and the optimization are built.
 use the same benchmark — the risk-free rate — so the denominator (downside deviation) is built
 only from periods that fell short of it:
 
-$$\text{Sortino}=\frac{\mu_{\text{ann}}-r_f}{\sigma_{\text{down}}}, \qquad
-\sigma_{\text{down}}=\sqrt{\tfrac{1}{T}\textstyle\sum_t \min(r_t-r_f^{\text{period}},\,0)^2}\times\sqrt{N}$$
+$$\text{Sortino}=\frac{\mu_{\text{ann}}-r_f}{\sigma_{\text{down}}}, \qquad \sigma_{\text{down}}=\sqrt{\tfrac{1}{T}\sum_t \min(r_t-r_f^{\text{period}},\,0)^2}\times\sqrt{N}$$
 
 where $r_f$ = risk-free rate (the return of a "safe" asset), $r_f^{\text{period}}$ = its per-period
 value, and $\sigma_{\text{down}}$ = downside deviation.
