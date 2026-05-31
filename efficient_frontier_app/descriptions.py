@@ -447,9 +447,27 @@ where $\sigma$ = volatility, $\mu$ = average return, $|z|$ = the size of the z-s
 *What it means for you:* "with 95% confidence, I won't lose more than X over this period." A 95%
 VaR of 5% means only about 1 period in 20 should be worse than a 5% loss.
 
-*Why it's useful:* it puts a single, intuitive euro-or-percent figure on downside risk — widely
-used by banks and funds. Caveat: it assumes a bell curve, so it can *understate* risk for
-fat-tailed assets like crypto, where extreme days happen more often than the curve predicts.
+*Why it's useful:* it puts a single, intuitive figure on downside risk — widely used by banks
+and funds. Caveat: it assumes a bell curve, so it can *understate* risk for fat-tailed assets
+like crypto, where extreme days happen more often than the curve predicts. Compare it with the
+*Historical VaR/CVaR* shown beside it to see whether that assumption actually holds.
+""",
+
+    "var_historical": r"""
+**Historical (empirical) VaR & CVaR**
+
+*How it's computed:* no formula and no distribution assumption — we sort the portfolio's actual
+past returns and read the tail off directly. Historical VaR is the loss it exceeded only on its
+worst $(1-\text{confidence})$ of periods; historical CVaR is the average loss across exactly
+those worst periods.
+
+*What it means for you:* "based on what really happened, this is what the bad days looked like."
+It captures the crashes and fat tails that a smooth bell curve glosses over.
+
+*Why it's useful:* it's the reality check on the parametric (normal) figures. When the historical
+loss is clearly worse than the parametric one, the asset has fat tails and the normal model is
+understating your risk — typical for crypto. The skew and excess-kurtosis figures quantify how
+far from a bell curve the returns really are.
 """,
 
     "return_distribution": r"""

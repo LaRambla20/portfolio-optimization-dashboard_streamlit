@@ -937,16 +937,31 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
     render_section_help(
         "This section estimates how much you could lose on a bad day or in a bad tail of "
         "outcomes, using Value at Risk and its sibling CVaR.",
-        ["zscore", "var_parametric", "cvar", "return_distribution", "var_frontier", "marked_portfolios"],
+        ["zscore", "var_parametric", "var_historical", "cvar", "return_distribution",
+         "var_frontier", "marked_portfolios"],
     )
 
     z_score = stats.norm.ppf(1 - alpha)
+    tail = 1 - alpha  # tail probability (e.g. 0.05 for 95% confidence)
     my_portfolio_weights = np.array(list(my_portfolio_allocation.values()), dtype=np.float64)
     my_portfolio_returns = portfolio_returns_simple.dot(my_portfolio_weights)
-    my_portfolio_cvar = cvar(my_portfolio_returns, 1 - alpha)  # alpha is confidence level, cvar expects tail quantile
     mu_var = my_portfolio_returns.mean()
     sigma_var = my_portfolio_returns.std()
-    VaR_return = mu_var + z_score * sigma_var  # 5th percentile return (z_score is negative for lower tail)
+
+    # Parametric (normal-model) tail risk, per period — reported as positive losses
+    VaR_return = mu_var + z_score * sigma_var            # parametric VaR threshold return (negative)
+    param_var_loss = -VaR_return
+    phi_z = stats.norm.pdf(z_score)
+    param_cvar_loss = sigma_var * phi_z / tail - mu_var  # normal expected shortfall
+
+    # Historical (empirical) tail risk, per period — no distribution assumption
+    hist_var_return = my_portfolio_returns.quantile(tail)  # empirical tail quantile (negative)
+    hist_var_loss = -hist_var_return
+    hist_cvar_loss = cvar(my_portfolio_returns, tail)      # mean of the worst `tail` fraction
+
+    # Shape of the actual return distribution
+    skew = my_portfolio_returns.skew()
+    exkurt = my_portfolio_returns.kurtosis()  # excess (Fisher): 0 = normal
 
     x = np.linspace(
         min(my_portfolio_returns.min(), mu_var - 4 * sigma_var),
@@ -956,23 +971,63 @@ def render_var_analysis(portfolio_returns_simple, portfolio_mean_returns, portfo
     pdf = stats.norm.pdf(x, mu_var, sigma_var)
 
     fig_var, ax_var = plt.subplots(figsize=(10, 5))
-    ax_var.plot(x, pdf, "b--", linewidth=1, label="Normal PDF")
-    ax_var.fill_between(x, 0, pdf, where=(x < VaR_return), color="red", alpha=0.3, label=f"α={alpha:.2f} tail")
-    ax_var.axvline(VaR_return, color="red", linestyle="--", linewidth=1, label=f"VaR (z={z_score:.2f})")
+    ax_var.plot(x, pdf, "b--", linewidth=1, label="Normal model (PDF)")
+    ax_var.fill_between(x, 0, pdf, where=(x < VaR_return), color="red", alpha=0.25, label=f"worst {tail:.0%} (normal)")
     ax_var.hist(my_portfolio_returns, bins=50, density=True, alpha=0.7, color="magenta", edgecolor="black")
+    ax_var.axvline(VaR_return, color="red", linestyle="--", linewidth=1.2, label=f"Parametric VaR ({param_var_loss:.1%})")
+    ax_var.axvline(hist_var_return, color="darkorange", linestyle=":", linewidth=1.8, label=f"Historical VaR ({hist_var_loss:.1%})")
     ax_var.set_title("Distribution of Returns — My Portfolio")
-    ax_var.set_xlabel("Return")
-    ax_var.set_ylabel("Frequency")
+    ax_var.set_xlabel("Per-period return")
+    ax_var.set_ylabel("Frequency (density)")
     ax_var.legend()
     ax_var.grid(alpha=0.3)
     st.pyplot(fig_var)
     plt.close(fig_var)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("z-score", f"{z_score:.4f}")
-    col2.metric("Daily Mean (μ)", f"{mu_var:.4f}")
-    col3.metric(f"Parametric VaR Loss (α={alpha})", f"{-VaR_return:.4f}")
-    col4.metric(f"CVaR (α={alpha})", f"{my_portfolio_cvar:.4f}")
+    st.markdown("**Daily return profile**")
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric("Mean (μ)", f"{mu_var:.3%}")
+    d2.metric("Volatility (σ)", f"{sigma_var:.3%}")
+    d3.metric("Skew", f"{skew:.2f}",
+              help="Asymmetry of returns. Negative means crashes tend to be bigger than rallies — a warning sign.")
+    d4.metric("Excess kurtosis", f"{exkurt:.2f}",
+              help="Tail fatness vs a normal bell curve. 0 = normal; higher means extreme moves happen more often "
+                   "than the normal model assumes.")
+
+    st.markdown(f"**Tail-risk at {alpha:.0%} confidence — per-period loss**")
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric(
+        "Parametric VaR", f"{param_var_loss:.2%}",
+        help=f"Assuming returns follow a perfect bell curve, there is only about a {tail:.0%} chance of a "
+             "single-period loss worse than this.",
+    )
+    r2.metric(
+        "Parametric CVaR", f"{param_cvar_loss:.2%}",
+        help=f"Assuming a perfect bell curve: if a period does land in that worst {tail:.0%}, this is the "
+             "average loss the model expects across those periods.",
+    )
+    r3.metric(
+        "Historical VaR", f"{hist_var_loss:.2%}",
+        help=f"From the actual return history: the portfolio lost more than this on only its worst {tail:.0%} "
+             "of periods. No bell-curve assumption.",
+    )
+    r4.metric(
+        "Historical CVaR", f"{hist_cvar_loss:.2%}",
+        help=f"From the actual return history: across its worst {tail:.0%} of periods, this was the average "
+             "loss. No bell-curve assumption.",
+    )
+
+    if hist_var_loss > param_var_loss or exkurt > 1.0:
+        st.warning(
+            f"This portfolio's losses are fatter-tailed than a normal bell curve (excess kurtosis "
+            f"{exkurt:.1f}). The **historical** VaR/CVaR are the more honest picture of tail risk here — "
+            "the parametric (normal) figures tend to understate it."
+        )
+    else:
+        st.info(
+            "This portfolio's returns are reasonably close to a normal bell curve, so the parametric and "
+            "historical figures are broadly consistent."
+        )
 
     st.subheader("Monte Carlo Efficient Frontier (VaR axis)")
 
