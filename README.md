@@ -21,6 +21,8 @@ python -m venv .venv
 
 > The `--trusted-host` flags work around SSL certificate issues common on Windows.
 
+> **Requires Streamlit ≥ 1.50.** The app uses APIs from recent Streamlit (`width="stretch"`, and `st.markdown(..., unsafe_allow_html=True)` for the SVG data-availability gauge in place of the now-removed `st.components.v1.html`). Developed against Streamlit 1.58.
+
 ## Usage
 
 1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
