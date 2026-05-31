@@ -44,7 +44,7 @@ def collect_portfolio_info(name, weights, mean_returns, cov_matrix, risk_free_ra
                            ax, marker, color, size):
     std_dev, ret = portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)
     sharpe  = (ret - risk_free_rate) / std_dev
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor)
+    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
     sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
@@ -62,7 +62,7 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
     ret     = results[1, index]
     sharpe  = results[2, index]
     weights = weights_list[index]
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor)
+    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
     sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
@@ -78,7 +78,7 @@ def collect_portfolio_info_VaR(name, weights, mean_returns, cov_matrix, risk_fre
                                 ax, marker, color, size):
     std_dev, ret, var = portfolio_annualised_performance_VaR(weights, mean_returns, cov_matrix, alpha, annualisation_factor)
     sharpe  = (ret - risk_free_rate) / std_dev
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor)
+    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
     sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
@@ -97,7 +97,7 @@ def collect_portfolio_info_mtc_VaR(name, index, results, weights_list, mean_retu
     sharpe  = results[2, index]
     var     = results[3, index]
     weights = weights_list[index]
-    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor)
+    dd      = portfolio_downside_deviation(weights, portfolio_returns_simple, annualisation_factor, risk_free_rate)
     sortino = (ret - risk_free_rate) / dd if dd > 0 else np.nan
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
@@ -560,7 +560,7 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
     for t in tickers:
         w_single = np.zeros(len(tickers))
         w_single[tickers.index(t)] = 1.0
-        dd = portfolio_downside_deviation(w_single, portfolio_returns_simple, annualisation_factor)
+        dd = portfolio_downside_deviation(w_single, portfolio_returns_simple, annualisation_factor, risk_free_rate)
         ret_single = portfolio_mean_returns[t] * annualisation_factor
         single_asset_sortino[t] = (ret_single - risk_free_rate) / dd if dd > 0 else np.nan
     st.subheader("Per-Asset Sortino Ratio (annualised)")

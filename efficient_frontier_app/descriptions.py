@@ -254,17 +254,18 @@ inputs from which volatility, correlation and the optimization are built.
     "sortino": r"""
 **Sortino ratio**
 
-*How it's computed:* like the Sharpe ratio, but it only penalises *downside* movement. The
-denominator (downside deviation) is built from returns below zero:
+*How it's computed:* like the Sharpe ratio, but it only penalises *downside* movement. Both parts
+use the same benchmark — the risk-free rate — so the denominator (downside deviation) is built
+only from periods that fell short of it:
 
 $$\text{Sortino}=\frac{\mu_{\text{ann}}-r_f}{\sigma_{\text{down}}}, \qquad
-\sigma_{\text{down}}=\sqrt{\tfrac{1}{T}\textstyle\sum_t \min(r_t,0)^2}\times\sqrt{N}$$
+\sigma_{\text{down}}=\sqrt{\tfrac{1}{T}\textstyle\sum_t \min(r_t-r_f^{\text{period}},\,0)^2}\times\sqrt{N}$$
 
-where $r_f$ = risk-free rate (the return of a "safe" asset) and $\sigma_{\text{down}}$ = downside
-deviation.
+where $r_f$ = risk-free rate (the return of a "safe" asset), $r_f^{\text{period}}$ = its per-period
+value, and $\sigma_{\text{down}}$ = downside deviation.
 
-*What it means for you:* reward earned per unit of *bad* risk. Upswings don't count against you
-here — only the losses that actually hurt.
+*What it means for you:* reward earned per unit of *bad* risk. Gains — and even small losses that
+still beat the safe rate — don't count against you here; only shortfalls below the risk-free rate do.
 
 *Why it's useful:* the Sharpe ratio treats a big gain as just as "risky" as a big loss. Sortino
 fixes that, so it's the fairer score for assets with occasional large upside (like crypto).

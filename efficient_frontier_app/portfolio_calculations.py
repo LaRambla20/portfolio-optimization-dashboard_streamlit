@@ -51,9 +51,13 @@ def portfolio_max_drawdown(weights, returns):
     return max_drawdown(portfolio_returns)
 
 
-def portfolio_downside_deviation(weights, returns, annualisation_factor):
+def portfolio_downside_deviation(weights, returns, annualisation_factor, risk_free_rate):
+    # Downside deviation measured below the (per-period) risk-free rate, so the Sortino MAR
+    # matches its numerator (return - risk_free_rate). r_f is de-annualised linearly, consistent
+    # with the mu * N return-annualisation convention.
     port_returns = returns.dot(weights)
-    downside = np.minimum(port_returns, 0.0)
+    mar_period = risk_free_rate / annualisation_factor
+    downside = np.minimum(port_returns - mar_period, 0.0)
     return np.sqrt(np.mean(downside ** 2)) * np.sqrt(annualisation_factor)
 
 
@@ -61,7 +65,7 @@ def portfolio_annualised_performance_sortino(weights, mean_returns, cov_matrix, 
                                              risk_free_rate, annualisation_factor):
     std, average = portfolio_annualised_performance(
         weights, mean_returns, cov_matrix, annualisation_factor)
-    dd = portfolio_downside_deviation(weights, returns, annualisation_factor)
+    dd = portfolio_downside_deviation(weights, returns, annualisation_factor, risk_free_rate)
     sortino = (average - risk_free_rate) / dd if dd > 0 else np.nan
     return std, average, sortino
 
@@ -112,7 +116,7 @@ def random_portfolios_sortino(num_portfolios, mean_returns, cov_matrix, returns,
         std, ret, sortino = portfolio_annualised_performance_sortino(
             weights, mean_returns, cov_matrix, returns,
             risk_free_rate, annualisation_factor)
-        dd = portfolio_downside_deviation(weights, returns, annualisation_factor)
+        dd = portfolio_downside_deviation(weights, returns, annualisation_factor, risk_free_rate)
         results[0, i] = std
         results[1, i] = ret
         results[2, i] = (ret - risk_free_rate) / std if std > 0 else 0.0
