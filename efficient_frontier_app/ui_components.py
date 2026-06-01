@@ -136,7 +136,8 @@ def display_portfolio_cards(portfolios, alpha):
 # SECTION 1 — LOAD ETF DATA (spike warnings + data availability)
 # ─────────────────────────────────────────────────────────────────
 
-def render_load_etf_data(tickers, spike_warnings, data_availability):
+def render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info=None,
+                         currency_info=None):
     st.header("1. Load ETF Data")
     render_section_help(
         "This section loads your price data and checks it is usable — flagging suspicious "
@@ -275,6 +276,41 @@ def render_load_etf_data(tickers, spike_warnings, data_availability):
             "therefore slightly approximate — switch the data period to weekly or monthly for cleaner "
             "mixed-calendar figures."
         )
+
+    if currency_info:
+        non_eur = [
+            (t, str(c)) for t in tickers
+            if (c := currency_info.get(t)) and str(c).strip().upper() != "EUR"
+        ]
+        if non_eur:
+            listed = ", ".join(f"**{t}** ({c})" for t, c in non_eur)
+            st.warning(
+                f"💱 Currency mismatch: {listed} {'is' if len(non_eur) == 1 else 'are'} not in EUR. "
+                "The app does **no** FX conversion outside the downloader, so these prices are treated "
+                "as if they were EUR — making their returns, volatility and (especially) correlations "
+                "wrong for a EUR investor, which biases the frontier and VaR. Re-download with "
+                "**Convert prices to EUR** ticked, or use the EUR-listed share class (e.g. `.MI` / `.DE` / `.AS`)."
+            )
+
+    if synthetic_info:
+        parts = []
+        for t in tickers:
+            meta = synthetic_info.get(t)
+            if not meta:
+                continue
+            join_str = meta["join_date"].strftime("%b %Y")
+            q = meta.get("q_hat")
+            q_str = f", q≈{q*100:.1f}%/yr" if q is not None else ""
+            parts.append(
+                f"**{t}**: {meta['n_synthetic']} rows before {join_str} are reconstructed "
+                f"total-return{q_str}"
+            )
+        if parts:
+            st.caption(
+                "🧬 Synthetic history: " + "; ".join(parts) + ". "
+                "These pre-ETF rows are a price-return index grossed up by a dividend yield "
+                "calibrated against the ETF — an *estimate*, not measured data."
+            )
 
     st.divider()
 

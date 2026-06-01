@@ -19,6 +19,9 @@ from data_handling import (
     compute_portfolio_returns_simple,
     compute_rolling_returns,
     run_download,
+    run_total_return_reconstruction,
+    read_synthetic_info,
+    read_currency_info,
 )
 
 from ui_components import (
@@ -89,7 +92,51 @@ with st.sidebar.expander("Download settings", expanded=False):
         value="individual_indices_data",
         help="Must match the CSV folder path used for analysis.",
     )
+    dl_keep_native = st.checkbox(
+        "Keep native currency (don't convert to EUR)",
+        value=False,
+        help="By default, any ticker not trading in EUR is detected and its prices are "
+             "scaled to EUR via the matching `{CCY}EUR=X` rate before saving, so the whole "
+             "portfolio shares one currency (the app does no FX conversion elsewhere). Tick "
+             "this to store the raw native-currency prices instead — §1 will then warn if "
+             "they aren't EUR.",
+    )
     dl_button = st.button("⬇️  Download now", width="stretch")
+
+    st.markdown("---")
+    st.markdown("**🧬 Total-return reconstruction** *(optional)*")
+    st.caption(
+        "Extend an accumulating ETF backward with a longer **price-return** index "
+        "(most `^` / Stooq indices exclude dividends). The missing dividend yield is "
+        "calibrated from the ETF overlap, the older index history is grossed up and "
+        "spliced on, and the result is saved as `{ETF}_EXT`. Add an **FX ticker** "
+        "(e.g. `EURUSD=X`) when the index is quoted in a different currency than the "
+        "ETF, or the yield will absorb FX drift. Uses the *Intervals* selected above.\n\n"
+        "⚠️ The index must track the **same underlying** as the ETF (e.g. an S&P 500 "
+        "index with an S&P 500 ETF). Pairing mismatched underlyings (S&P 500 vs "
+        "All-World) folds their performance gap into a meaningless yield — a recovered "
+        "`q` outside ~0–4%/yr is the tell."
+    )
+    if "recon_jobs_df" not in st.session_state:
+        st.session_state.recon_jobs_df = pd.DataFrame(
+            [{"Index ticker": "^GSPC", "Calibrate vs ETF": "SXR8.DE", "FX ticker": "EURUSD=X"}]
+        )
+    recon_jobs_edited = st.data_editor(
+        st.session_state.recon_jobs_df,
+        num_rows="dynamic",
+        width="stretch",
+        column_config={
+            "Index ticker": st.column_config.TextColumn(
+                "Index ticker", help="Long-history price-return index (e.g. ^GSPC)."),
+            "Calibrate vs ETF": st.column_config.TextColumn(
+                "Calibrate vs ETF", help="Accumulating ETF to calibrate the yield against."),
+            "FX ticker": st.column_config.TextColumn(
+                "FX ticker", help="USD-per-EUR pair (e.g. EURUSD=X). Leave blank if same currency."),
+        },
+        key="recon_editor",
+    )
+    st.session_state.recon_jobs_df = recon_jobs_edited
+    recon_button = st.button("🧬  Reconstruct now", width="stretch")
 
 # --- Portfolio definition ---
 st.sidebar.subheader("My Portfolio")
@@ -238,6 +285,7 @@ if dl_button:
         t = threading.Thread(
             target=run_download,
             args=(dl_tickers, dl_intervals, dl_columns_to_drop, dl_output_dir, log_q),
+            kwargs={"convert_to_eur": not dl_keep_native},
             daemon=True,
         )
         t.start()
@@ -260,6 +308,65 @@ if dl_button:
 
         t.join()
         status.success(f"Download complete — {completed}/{total_tasks} files processed.")
+        st.divider()
+
+# ─────────────────────────────────────────────────────────
+# RECONSTRUCTION PANEL
+# ─────────────────────────────────────────────────────────
+
+if recon_button:
+    recon_jobs = [
+        {
+            "index": str(r["Index ticker"]).strip(),
+            "etf": str(r["Calibrate vs ETF"]).strip(),
+            "fx": str(r.get("FX ticker") or "").strip(),
+        }
+        for _, r in recon_jobs_edited.iterrows()
+        if str(r["Index ticker"]).strip() and str(r["Calibrate vs ETF"]).strip()
+    ]
+    if not recon_jobs:
+        st.warning("Add at least one row with both an index ticker and a calibrating ETF.")
+    elif not dl_intervals:
+        st.warning("Select at least one interval (in the Download settings above).")
+    else:
+        st.subheader("🧬 Reconstructing Total-Return History")
+        rec_log_box  = st.empty()
+        rec_prog_bar = st.progress(0)
+        rec_status   = st.empty()
+
+        rec_log_lines = []
+        rec_log_q = queue.Queue()
+        rec_total = len(recon_jobs) * len(dl_intervals)
+
+        rt = threading.Thread(
+            target=run_total_return_reconstruction,
+            args=(recon_jobs, dl_intervals, dl_output_dir, rec_log_q),
+            daemon=True,
+        )
+        rt.start()
+
+        rec_completed = 0
+        while rt.is_alive() or not rec_log_q.empty():
+            try:
+                msg = rec_log_q.get(timeout=0.2)
+                if msg.startswith("__DONE__"):
+                    rec_completed = int(msg.replace("__DONE__", "").split("/")[0])
+                    rec_prog_bar.progress(1.0)
+                else:
+                    rec_log_lines.append(msg)
+                    if any(msg.startswith(p) for p in ["✅", "❌"]):
+                        rec_prog_bar.progress(min(len(
+                            [m for m in rec_log_lines if m.startswith(("✅", "❌"))]
+                        ) / rec_total, 1.0))
+                    rec_log_box.code("\n".join(rec_log_lines[-30:]))
+            except queue.Empty:
+                pass
+
+        rt.join()
+        rec_status.success(
+            f"Reconstruction complete — {rec_total} job(s) processed. "
+            "Add the new `{ETF}_EXT` ticker(s) to **My Portfolio** to analyze them."
+        )
         st.divider()
 
 # ─────────────────────────────────────────────────────────
@@ -301,6 +408,8 @@ if missing_files:
 with st.spinner("Loading data and computing..."):
     spike_warnings = check_price_spikes(tickers, folder_path, filename_suffix, filter_date_string)
     data_availability = compute_data_availability(tickers, folder_path, filename_suffix, filter_date_string)
+    synthetic_info = read_synthetic_info(tickers, folder_path, filename_suffix, filter_date_string)
+    currency_info = read_currency_info(tickers, folder_path, filename_suffix)
     merged_df = build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date_string)
     returns = compute_returns(merged_df, return_type)
     portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix = compute_portfolio_returns_simple(merged_df)
@@ -316,7 +425,7 @@ if len(merged_df) < window_periods:
 # RENDER SECTIONS
 # ─────────────────────────────────────────────────────────
 
-render_load_etf_data(tickers, spike_warnings, data_availability)
+render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info, currency_info)
 render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, return_type, annualisation_factor)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type)
