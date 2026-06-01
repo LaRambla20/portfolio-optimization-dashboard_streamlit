@@ -169,10 +169,20 @@ edited_portfolio = st.sidebar.data_editor(
     },
     key="portfolio_editor",
 )
-st.session_state.portfolio_df = edited_portfolio
+# NOTE: do *not* write `edited_portfolio` back into st.session_state.portfolio_df.
+# With key= set, the editor already persists edits as a diff against this stable
+# seed. Reassigning the returned (edited) frame moves that baseline underneath the
+# widget, which drops the pending value of a freshly-added row until it's typed
+# twice. The seed is set once above; the editor manages its own state thereafter.
 
 raw_portfolio = dict(zip(edited_portfolio["Ticker"], edited_portfolio["Market Value (EUR)"]))
-raw_portfolio = {k: v for k, v in raw_portfolio.items() if k and k.strip()}
+# A freshly-added row may have a ticker but a blank Market Value, which comes
+# through as None/NaN — coerce to 0.0 so sum()/division below don't choke.
+raw_portfolio = {
+    k: (0.0 if v is None or pd.isna(v) else float(v))
+    for k, v in raw_portfolio.items()
+    if k and k.strip()
+}
 
 # --- Simulation parameters ---
 st.sidebar.subheader("Simulation Parameters")
