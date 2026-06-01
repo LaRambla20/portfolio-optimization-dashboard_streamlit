@@ -4,3 +4,6 @@ __pycache__/
 *.pyo
 .streamlit/
 test_screenshots/
+
+# Downloaded index data (Yahoo index tickers are '^'-prefixed); ETF sample CSVs stay tracked
+individual_indices_data/^*.csv
