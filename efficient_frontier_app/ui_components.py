@@ -574,6 +574,27 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 
     weights = np.array([my_portfolio_allocation[t] for t in tickers], dtype=np.float64)
 
+    # ── User-defined allocation (the input being analysed) ───────────────────────────────
+    st.subheader("Your Allocation")
+    alloc_series = pd.Series(weights, index=tickers)
+    nonzero = alloc_series[alloc_series > 0]
+    pie_col, tbl_col = st.columns([1, 1])
+    with pie_col:
+        if nonzero.empty:
+            st.caption("All weights are zero — nothing to chart.")
+        else:
+            fig_alloc, ax_alloc = plt.subplots(figsize=(4, 4))
+            ax_alloc.pie(nonzero.values, labels=nonzero.index, autopct="%1.1f%%",
+                         startangle=90, pctdistance=0.82,
+                         wedgeprops={"edgecolor": "white", "linewidth": 1.5})
+            ax_alloc.axis("equal")
+            st.pyplot(fig_alloc)
+            plt.close(fig_alloc)
+    with tbl_col:
+        alloc_df = (alloc_series * 100).round(2).to_frame("Weight (%)")
+        st.dataframe(alloc_df, width="stretch")
+        st.caption("Weights are normalised from the market values you entered in the sidebar.")
+
     # ── Buy-and-hold value series (the single basis for every figure below) ──────────────
     value = buy_and_hold_value_series(merged_df, tickers, weights)
     bh_ret = value.pct_change().dropna()
