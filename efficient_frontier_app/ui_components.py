@@ -27,6 +27,11 @@ from portfolio_calculations import (
     make_allocation_df,
     cvar,
     max_drawdown,
+    buy_and_hold_value_series,
+    underwater_episodes,
+    deepest_drawdown_episode,
+    longest_underwater_episode,
+    downside_deviation_series,
 )
 from data_handling import evaluate_simple_return, evaluate_CAGR, evaluate_return_metrics
 from descriptions import render_section_help
@@ -453,19 +458,18 @@ def render_etf_prices(merged_df, tickers):
     return norm_df
 
 
-def render_rolling_returns(rolling_returns, portfolio_rolling_returns, tickers,
-                            rolling_window_years, return_type):
+def render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type):
     st.header("3b. Rolling Returns")
     render_section_help(
         "This section shows returns over long rolling windows, so you can see what an investor "
         "would have earned holding for 1, 5 or 10 years starting at any point in time.",
-        ["rolling_returns_asset", "rolling_returns_portfolio"],
+        ["rolling_returns_asset"],
     )
     if rolling_returns.shape[0] <= rolling_window_years:
         st.warning(f"Insufficient data for {rolling_window_years}-year rolling window.")
         return
 
-    # Chart 1: Individual assets
+    # Individual assets (the portfolio rolling-returns chart lives in §5, Input Portfolio Analysis).
     st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns ({return_type.capitalize()})")
     fig, ax = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
@@ -478,21 +482,6 @@ def render_rolling_returns(rolling_returns, portfolio_rolling_returns, tickers,
     ax.grid(True)
     st.pyplot(fig)
     plt.close(fig)
-
-    # Chart 2: Portfolio
-    st.subheader(f"Portfolio — {rolling_window_years}Y Rolling Returns (Simple)")
-    port_df = portfolio_rolling_returns.reset_index()
-    port_df.columns = ["date", "rolling_return"]
-    fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(port_df["date"], port_df["rolling_return"], lw=1.5, color="black", label="Portfolio")
-    ax2.set_title(f"Portfolio Rolling {rolling_window_years}-Year Returns")
-    ax2.set_xlabel("Date")
-    ax2.set_ylabel("Rolling Return (Simple)")
-    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
-    ax2.legend()
-    ax2.grid(True)
-    st.pyplot(fig2)
-    plt.close(fig2)
     st.divider()
 
 
@@ -548,12 +537,7 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
 
     st.subheader("Correlation Matrix (used for optimization — simple returns)")
     st.dataframe(portfolio_returns_simple.corr(), width="stretch")
-
-    fig_corr, ax_corr = plt.subplots(figsize=(8, 5))
-    sns.heatmap(portfolio_returns_simple.corr(), annot=True, cmap="coolwarm", center=0, ax=ax_corr)
-    ax_corr.set_title("Asset Correlation Matrix (simple returns)")
-    st.pyplot(fig_corr)
-    plt.close(fig_corr)
+    st.caption("The correlation heatmap is shown in §5, Input Portfolio Analysis.")
 
     fig_ret, ax_ret = plt.subplots(figsize=(12, 5))
     for c in returns.columns.values:
@@ -566,13 +550,219 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 5 — MONTE CARLO EFFICIENT FRONTIER (VOL-BASED)
+# SECTION 5 — INPUT PORTFOLIO ANALYSIS (BUY-AND-HOLD)
+# ─────────────────────────────────────────────────────────────────
+
+def _fmt_period(days, ongoing):
+    """Human-readable underwater duration: '482 days (~1.3y)', or '≥ N days (ongoing)'."""
+    years = days / 365.25
+    span = f"{days} days (~{years:.1f}y)" if years >= 1 else f"{days} days"
+    return f"≥ {span}, ongoing" if ongoing else span
+
+
+def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
+                                    my_portfolio_allocation, annualisation_factor,
+                                    risk_free_rate, alpha, window_periods, rolling_window_years):
+    st.header("5. Input Portfolio Analysis")
+    render_section_help(
+        "This section analyses your actual allocation as a buy-and-hold portfolio — set once and "
+        "never rebalanced — covering its growth, its worst falls and recovery times, and its tail risk.",
+        ["buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
+         "max_drawdown", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
+         "var_historical", "cvar", "rolling_returns_portfolio", "correlation"],
+    )
+
+    weights = np.array([my_portfolio_allocation[t] for t in tickers], dtype=np.float64)
+
+    # ── Buy-and-hold value series (the single basis for every figure below) ──────────────
+    value = buy_and_hold_value_series(merged_df, tickers, weights)
+    bh_ret = value.pct_change().dropna()
+    if len(bh_ret) < 2:
+        st.warning("Not enough overlapping history to analyse the portfolio.")
+        return
+
+    N = annualisation_factor
+    ann_ret = bh_ret.mean() * N
+    ann_vol = bh_ret.std() * np.sqrt(N)
+    sharpe = (ann_ret - risk_free_rate) / ann_vol if ann_vol > 0 else np.nan
+    dd_dev = downside_deviation_series(bh_ret, N, risk_free_rate)
+    sortino = (ann_ret - risk_free_rate) / dd_dev if dd_dev > 0 else np.nan
+
+    drawdown = value / value.cummax() - 1.0
+    mdd = abs(drawdown.min())
+
+    # Historical tail risk (per period), guarded by tail-sufficiency exactly as §8.
+    tail = 1 - alpha
+    n_obs = len(bh_ret)
+    n_tail = int(round(tail * n_obs))
+    hist_ok = n_tail >= 5
+    hist_indicative = 5 <= n_tail < 20
+    hist_var_loss = -bh_ret.quantile(tail)
+    hist_cvar_loss = cvar(bh_ret, tail)
+
+    st.info(
+        "📌 Buy-and-hold basis: this section invests at your weights once and never rebalances, so "
+        "the mix drifts with prices. Figures here differ from the rebalanced 'My Portfolio' card on "
+        "the efficient frontier (§6/§7) and the VaR in §8."
+    )
+
+    # ── Headline metrics ────────────────────────────────────────────────────────────────
+    a1, a2, a3, a4 = st.columns(4)
+    a1.metric(
+        "Average annual return", f"{ann_ret:.2%}",
+        help="Mean per-period return of the buy-and-hold portfolio, annualised linearly (mean × N). "
+             "An arithmetic/expected figure, not the compounded CAGR.",
+    )
+    a2.metric("Annual volatility", f"{ann_vol:.2%}",
+              help="Standard deviation of per-period returns, annualised as σ·√N.")
+    a3.metric("Sharpe ratio", f"{sharpe:.3f}" if not np.isnan(sharpe) else "n/a",
+              help="(Average annual return − risk-free rate) ÷ annual volatility.")
+    a4.metric("Sortino ratio", f"{sortino:.3f}" if not np.isnan(sortino) else "n/a",
+              help="Like Sharpe but divides by downside deviation only — penalises harmful "
+                   "volatility, not upside.")
+
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Max drawdown", f"{mdd:.2%}",
+              help="Worst peak-to-trough fall of the buy-and-hold value over the full history.")
+    if hist_ok:
+        note = f" (indicative — only {n_tail} obs in the tail)" if hist_indicative else ""
+        b2.metric(f"Historical VaR ({alpha:.0%})", f"{hist_var_loss:.2%}",
+                  help=f"From actual history: the portfolio lost more than this on only its worst "
+                       f"{tail:.0%} of periods ({n_tail} of {n_obs}). Per period, no normal assumption.{note}")
+        b3.metric(f"Historical CVaR ({alpha:.0%})", f"{hist_cvar_loss:.2%}",
+                  help=f"Average loss across the worst {tail:.0%} of periods ({n_tail} of {n_obs}). "
+                       f"Per period, no normal assumption.{note}")
+    else:
+        insufficient = (
+            f"Not enough history for a reliable estimate: only {n_tail} observation(s) fall in the "
+            f"worst {tail:.0%} tail (of {n_obs}). Use a longer date range, a higher-frequency data "
+            "period, or a lower confidence level."
+        )
+        b2.metric(f"Historical VaR ({alpha:.0%})", "n/a", help=insufficient)
+        b3.metric(f"Historical CVaR ({alpha:.0%})", "n/a", help=insufficient)
+
+    # ── Cumulative returns: portfolio (bold) + per-asset buy-and-hold overlays ───────────
+    st.subheader("Cumulative Returns (buy-and-hold)")
+    prices = merged_df.set_index("date")[tickers]
+    norm = prices / prices.iloc[0]
+    pct = plt.FuncFormatter(lambda y, _: f"{y:.0%}")
+    fig_cum, ax_cum = plt.subplots(figsize=(12, 5))
+    for t in tickers:
+        ax_cum.plot(norm.index, norm[t] - 1.0, lw=1, alpha=0.45, label=t)
+    ax_cum.plot(value.index, value - 1.0, lw=2.2, color="black", label="Portfolio")
+    ax_cum.axhline(0, color="#999", lw=0.8)
+    ax_cum.set_title("Cumulative Return Since Start")
+    ax_cum.set_xlabel("Date")
+    ax_cum.set_ylabel("Cumulative Return")
+    ax_cum.yaxis.set_major_formatter(pct)
+    ax_cum.legend(title="Holding", ncol=2)
+    ax_cum.grid(True, alpha=0.3)
+    st.pyplot(fig_cum)
+    plt.close(fig_cum)
+
+    # ── Underwater curve (annotated) + drawdown/recovery periods ────────────────────────
+    st.subheader("Underwater Curve & Drawdown Periods")
+    deepest = deepest_drawdown_episode(value)
+    longest = longest_underwater_episode(value)
+    last_date = value.index[-1]
+
+    fig_uw, ax_uw = plt.subplots(figsize=(12, 5))
+    ax_uw.fill_between(drawdown.index, drawdown.values, 0.0, color="#d73027", alpha=0.25)
+    ax_uw.plot(drawdown.index, drawdown.values, color="#a50026", lw=1)
+
+    if longest is not None:
+        l_ep, l_days, l_ongoing = longest
+        l_end = l_ep["recovery_date"] if l_ep["recovery_date"] is not None else last_date
+        ax_uw.axvspan(l_ep["peak_date"], l_end, color="#fdae61", alpha=0.20,
+                      label="Longest underwater stretch")
+
+    if deepest is not None:
+        d_peak = deepest["peak_date"]
+        d_trough = deepest["trough_date"]
+        d_rec = deepest["recovery_date"]
+        d_depth = deepest["trough_val"] / deepest["peak_val"] - 1.0
+        ax_uw.axvline(d_peak, color="#1a9850", ls="--", lw=1.2, label="Deepest-DD peak")
+        ax_uw.scatter([d_trough], [d_depth], color="#a50026", s=60, zorder=5,
+                      label=f"Deepest trough ({d_depth:.1%})")
+        if d_rec is not None:
+            ax_uw.axvline(d_rec, color="#4575b4", ls="--", lw=1.2, label="Recovered")
+
+    ax_uw.axhline(0, color="#999", lw=0.8)
+    ax_uw.set_title("Drawdown From Running Peak")
+    ax_uw.set_xlabel("Date")
+    ax_uw.set_ylabel("Drawdown")
+    ax_uw.yaxis.set_major_formatter(pct)
+    ax_uw.legend(loc="lower left", fontsize=8)
+    ax_uw.grid(True, alpha=0.3)
+    st.pyplot(fig_uw)
+    plt.close(fig_uw)
+
+    u1, u2 = st.columns(2)
+    if deepest is not None:
+        d_peak = deepest["peak_date"]
+        d_rec = deepest["recovery_date"]
+        d_depth = abs(deepest["trough_val"] / deepest["peak_val"] - 1.0)
+        if d_rec is not None:
+            deep_days, deep_ongoing = (d_rec - d_peak).days, False
+        else:
+            deep_days, deep_ongoing = (last_date - d_peak).days, True
+        u1.metric(
+            "Deepest-drawdown recovery", _fmt_period(deep_days, deep_ongoing),
+            help=f"The deepest fall was {d_depth:.1%}, from a peak on {d_peak.date()} to a trough on "
+                 f"{deepest['trough_date'].date()}. This is the time from that peak until value "
+                 f"{'regained it' if not deep_ongoing else 'first regains it (not yet recovered)'}.",
+        )
+    else:
+        u1.metric("Deepest-drawdown recovery", "n/a", help="Value never fell below a prior peak.")
+
+    if longest is not None:
+        l_ep, l_days, l_ongoing = longest
+        u2.metric(
+            "Longest underwater stretch", _fmt_period(l_days, l_ongoing),
+            help=f"The most time spent below a peak before recovering — peak on "
+                 f"{l_ep['peak_date'].date()}"
+                 + ("" if not l_ongoing else " (still underwater at the end of the data)") + ".",
+        )
+    else:
+        u2.metric("Longest underwater stretch", "n/a", help="Value never fell below a prior peak.")
+
+    # ── Portfolio rolling returns (moved from §3b), on the buy-and-hold value ────────────
+    st.subheader(f"Portfolio — {rolling_window_years}Y Rolling Returns (Buy-and-Hold)")
+    if len(value) > window_periods:
+        roll = (value / value.shift(window_periods) - 1.0).dropna()
+        fig_rr, ax_rr = plt.subplots(figsize=(12, 5))
+        ax_rr.plot(roll.index, roll.values, lw=1.5, color="black", label="Portfolio")
+        ax_rr.set_title(f"Portfolio Rolling {rolling_window_years}-Year Returns")
+        ax_rr.set_xlabel("Date")
+        ax_rr.set_ylabel("Rolling Return")
+        ax_rr.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
+        ax_rr.legend()
+        ax_rr.grid(True, alpha=0.3)
+        st.pyplot(fig_rr)
+        plt.close(fig_rr)
+    else:
+        st.info(f"Insufficient data for a {rolling_window_years}-year rolling window "
+                f"({len(value)} periods ≤ {window_periods}).")
+
+    # ── Asset correlation heatmap (moved from §4) ───────────────────────────────────────
+    st.subheader("Asset Correlation Heatmap (simple returns)")
+    fig_corr, ax_corr = plt.subplots(figsize=(8, 5))
+    sns.heatmap(portfolio_returns_simple.corr(), annot=True, cmap="coolwarm", center=0, ax=ax_corr)
+    ax_corr.set_title("Asset Correlation Matrix (simple returns)")
+    st.pyplot(fig_corr)
+    plt.close(fig_corr)
+
+    st.divider()
+
+
+# ─────────────────────────────────────────────────────────────────
+# SECTION 6 — MONTE CARLO EFFICIENT FRONTIER (VOL-BASED)
 # ─────────────────────────────────────────────────────────────────
 
 def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                         custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha):
-    st.header("5. Monte Carlo Efficient Frontier (Volatility)")
+    st.header("6. Monte Carlo Efficient Frontier (Volatility)")
     render_section_help(
         "This section randomly simulates thousands of portfolios to map the trade-off between "
         "risk and return, and highlights a few notable ones.",
@@ -727,14 +917,14 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 6 — SCIPY EFFICIENT FRONTIER (VOL-BASED)
+# SECTION 7 — SCIPY EFFICIENT FRONTIER (VOL-BASED)
 # ─────────────────────────────────────────────────────────────────
 
 def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                      my_portfolio_allocation, alpha):
-    st.header("6. Scipy Efficient Frontier (Volatility)")
+    st.header("7. Scipy Efficient Frontier (Volatility)")
     render_section_help(
         "This section mathematically solves for the best portfolios — rather than guessing "
         "randomly — and draws the efficient frontier: the best return achievable at each level of risk.",
@@ -901,11 +1091,11 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 7 — VAR ANALYSIS
+# SECTION 8 — VAR ANALYSIS
 # ─────────────────────────────────────────────────────────────────
 
 def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation):
-    st.header("7. Value at Risk (VaR) Analysis")
+    st.header("8. Value at Risk (VaR) Analysis")
     render_section_help(
         "This section estimates how much you could lose on a bad day or in a bad tail of "
         "outcomes, using Value at Risk and its sibling CVaR.",

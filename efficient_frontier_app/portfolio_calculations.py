@@ -214,8 +214,92 @@ def portfolio_info_dict(name, std_dev, ret, sharpe, alloc_df, var=None):
         d["Value at Risk"] = f"{var:.2%}"
     return d, alloc_df
 
-def compute_portfolio_rolling_returns(weights, returns_simple, window_periods):
-    """Portfolio rolling return: (portfolio_value[t]/portfolio_value[t-window_periods])-1."""
-    portfolio_ret = returns_simple.dot(weights)
-    portfolio_value = (1 + portfolio_ret).cumprod()
-    return portfolio_value / portfolio_value.shift(window_periods) - 1
+# ─────────────────────────────────────────────────────────────────
+# BUY-AND-HOLD PORTFOLIO (Input Portfolio Analysis, §5)
+# ─────────────────────────────────────────────────────────────────
+# Unlike the optimization sections (which rebalance to fixed weights every period via
+# returns.dot(weights)), §5 models a portfolio set up once and left untouched: each asset is
+# bought at its first price and held, so the mix drifts with prices. All §5 figures derive from
+# this single value series, so it is intentionally inconsistent with the rebalanced cards/frontier.
+
+def buy_and_hold_value_series(merged_df, tickers, weights):
+    """Normalized buy-and-hold portfolio value, starting at 1.0.
+
+    Each asset is rebased to its first price (units = w_i / P_i0), then the value is the sum of
+    holdings as prices drift: V_t = sum_i w_i * P_it / P_i0. Scale-invariant, so only the weight
+    proportions matter — not the absolute euros invested. Returns a pd.Series indexed by date.
+    """
+    prices = merged_df.set_index("date")[list(tickers)]
+    norm = prices / prices.iloc[0]
+    value = norm.mul(np.asarray(weights, dtype=np.float64), axis=1).sum(axis=1)
+    return value
+
+
+def underwater_episodes(value):
+    """Decompose a value series into drawdown episodes.
+
+    An episode opens the first period value dips below its running peak and closes the period it
+    regains that peak. Returns a list of dicts with peak/trough dates+values and recovery date
+    (None if still underwater at the end of the data).
+    """
+    episodes = []
+    running_peak = -np.inf
+    running_peak_date = None
+    in_dd = False
+    peak_date = peak_val = trough_date = trough_val = None
+    for d, v in value.items():
+        if v >= running_peak:
+            running_peak = v
+            running_peak_date = d
+            if in_dd:  # value has regained the prior peak — episode recovers here
+                episodes.append({"peak_date": peak_date, "peak_val": peak_val,
+                                 "trough_date": trough_date, "trough_val": trough_val,
+                                 "recovery_date": d})
+                in_dd = False
+        else:
+            if not in_dd:
+                in_dd = True
+                peak_date, peak_val = running_peak_date, running_peak
+                trough_date, trough_val = d, v
+            elif v < trough_val:
+                trough_date, trough_val = d, v
+    if in_dd:
+        episodes.append({"peak_date": peak_date, "peak_val": peak_val,
+                         "trough_date": trough_date, "trough_val": trough_val,
+                         "recovery_date": None})
+    return episodes
+
+
+def deepest_drawdown_episode(value):
+    """The episode containing the largest peak-to-trough drop (None if value never falls)."""
+    episodes = underwater_episodes(value)
+    if not episodes:
+        return None
+    return min(episodes, key=lambda e: e["trough_val"] / e["peak_val"] - 1.0)
+
+
+def longest_underwater_episode(value):
+    """The episode with the most calendar days from peak to recovery (or to the last date if
+    still underwater). Returns (episode, days, ongoing) or None if value never falls."""
+    episodes = underwater_episodes(value)
+    if not episodes:
+        return None
+    last_date = value.index[-1]
+
+    def span_days(e):
+        end = e["recovery_date"] if e["recovery_date"] is not None else last_date
+        return (end - e["peak_date"]).days
+
+    best = max(episodes, key=span_days)
+    return best, span_days(best), best["recovery_date"] is None
+
+
+def downside_deviation_series(returns, annualisation_factor, risk_free_rate):
+    """Annualised downside deviation of a return *series* (below the per-period risk-free MAR).
+
+    Same definition as portfolio_downside_deviation, but for an already-built return series
+    (e.g. the buy-and-hold portfolio) rather than weights × a returns dataframe.
+    """
+    mar_period = risk_free_rate / annualisation_factor
+    downside = np.minimum(returns - mar_period, 0.0)
+    return np.sqrt(np.mean(downside ** 2)) * np.sqrt(annualisation_factor)

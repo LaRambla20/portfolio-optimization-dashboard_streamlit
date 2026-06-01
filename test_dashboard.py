@@ -22,9 +22,10 @@ SECTIONS = [
     "3. ETF Prices",
     "3b. Rolling Returns",
     "4. Returns & Statistics",
-    "5. Monte Carlo Efficient Frontier",
-    "6. Scipy Efficient Frontier",
-    "7. Value at Risk",
+    "5. Input Portfolio Analysis",
+    "6. Monte Carlo Efficient Frontier",
+    "7. Scipy Efficient Frontier",
+    "8. Value at Risk",
 ]
 
 

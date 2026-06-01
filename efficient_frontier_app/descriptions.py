@@ -153,9 +153,9 @@ the worst possible moment and held through the bottom — the gut-check of "how 
 
 *Why it's useful:* volatility treats ups and downs the same, but investors actually fear the
 downs. Max drawdown captures the deepest hole you'd have had to sit through, which is often what
-decides whether someone can stick with a strategy. (For a portfolio it's measured on a
-constant-weight series — i.e. rebalancing to target weights each period — so a real buy-and-hold
-mix that drifts could behave differently.)
+decides whether someone can stick with a strategy. (For a portfolio the basis — rebalanced to
+target weights each period, or buy-and-hold that drifts — is stated in each section, and the two
+can behave differently.)
 """,
 
     "cumulative_return": r"""
@@ -225,16 +225,15 @@ rewarding.
     "rolling_returns_portfolio": r"""
 **Rolling returns (portfolio)**
 
-*How it's computed:* first build your portfolio's return each period by blending the assets at
-your chosen weights, compound that into a portfolio value, then take the same window-over-window
-return:
+*How it's computed:* build your portfolio's buy-and-hold value by holding your chosen mix without
+rebalancing (see *Buy-and-hold basis*), then take the window-over-window return at every date:
 
-$$r^{\text{port}}_t = \sum_i w_i\, r_{i,t}, \qquad R_t = \frac{V_t}{V_{t-w}} - 1$$
+$$R_t = \frac{V_t}{V_{t-w}} - 1$$
 
-where $w_i$ = the weight of asset $i$ and $V_t$ = portfolio value.
+where $V_t$ = portfolio value and $w$ = the window length.
 
-*What it means for you:* the rolling-window experience of holding *your specific mix*, not the
-individual assets — this assumes the mix is kept at constant weights over time.
+*What it means for you:* the rolling-window experience of holding *your specific mix* untouched,
+not the individual assets.
 
 *Why it's useful:* it shows whether diversifying actually smoothed the ride: the portfolio band
 is often tighter than any single asset's, which is diversification working in your favour.
@@ -307,7 +306,48 @@ way to cut portfolio risk. Two strong-but-uncorrelated assets make a much smooth
 either alone.
 """,
 
-    # ── §5 — Monte Carlo Efficient Frontier ──────────────────────────────────
+    # ── §5 — Input Portfolio Analysis ────────────────────────────────────────
+    "buy_and_hold": r"""
+**Buy-and-hold basis (this section)**
+
+*How it's computed:* we invest at your current weights once at the start of the common window and never rebalance. Each asset is bought at its first price and held, so the portfolio value is the sum of those drifting holdings:
+
+$$V_t = \sum_i w_i\,\frac{P_{i,t}}{P_{i,0}}, \qquad V_0 = 1$$
+
+where $w_i$ = your weight in asset $i$ and $P_{i,t}$ = its price.
+
+*What it means for you:* this mirrors a real account you set up once and leave alone — winners grow into a larger share of the pot and losers shrink, so the mix drifts over time.
+
+*Why it's useful:* it shows what your actual holdings would have done untouched. Note this differs from the optimization sections (Monte Carlo, Scipy, VaR), which rebalance back to fixed weights every period — so the *same* portfolio's return, risk and drawdown can differ between sections.
+""",
+
+    "underwater_curve": r"""
+**Underwater curve**
+
+*How it's computed:* track the running peak of portfolio value, then plot how far below that peak you sit at every date:
+
+$$U_t = \frac{V_t}{\max_{s\le t} V_s} - 1 \;\le\; 0$$
+
+*What it means for you:* the line rests at 0 whenever you're at a new all-time high and dips negative through every losing stretch — the depth is exactly how far you're down from the best you'd ever seen.
+
+*Why it's useful:* it turns the price history into a map of pain: how deep the holes were and, just as important, how long you spent climbing back out of them.
+""",
+
+    "max_underwater_period": r"""
+**Maximum drawdown & underwater period**
+
+*How it's computed:* the deepest drawdown is the largest fall from a peak to a later trough. Its *recovery time* is the days from that peak until value first regains it; separately, the *longest underwater period* is the most days spent below any peak before recovering:
+
+$$\text{recovery days} = t_{\text{recover}} - t_{\text{peak}}$$
+
+If value never returns to its peak within the data, the period is shown as "ongoing" and counted up to the last date.
+
+*What it means for you:* depth tells you how bad it got; duration tells you how long you'd have waited, underwater, just to break even. The deepest fall and the longest wait are not always the same episode.
+
+*Why it's useful:* many investors abandon a strategy not at the bottom but during the long, flat climb back. Knowing the worst recovery time sets expectations for how much patience the portfolio has historically demanded.
+""",
+
+    # ── §6 — Monte Carlo Efficient Frontier ──────────────────────────────────
     "monte_carlo": r"""
 **Monte Carlo simulation (random portfolios)**
 
@@ -390,7 +430,7 @@ how painful it is once you're past that threshold — a more honest picture of t
 portfolio level it's computed on a constant-weight, daily-rebalanced return series.)
 """,
 
-    # ── §6 — SciPy Efficient Frontier ────────────────────────────────────────
+    # ── §7 — SciPy Efficient Frontier ────────────────────────────────────────
     "scipy_optimization": r"""
 **Mathematical optimization (SLSQP)**
 
@@ -421,7 +461,7 @@ cloud only *approaches* it from below.
 sits on or below this line; the closer to the line, the more efficient your mix.
 """,
 
-    # ── §7 — Value at Risk ───────────────────────────────────────────────────
+    # ── §8 — Value at Risk ───────────────────────────────────────────────────
     "zscore": r"""
 **z-score**
 

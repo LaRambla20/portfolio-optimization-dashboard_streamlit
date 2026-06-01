@@ -26,13 +26,12 @@ from ui_components import (
     render_per_etf_analytics,
     render_etf_prices,
     render_returns_statistics,
+    render_input_portfolio_analysis,
     render_monte_carlo,
     render_scipy_ef,
     render_var_analysis,
     render_rolling_returns,
 )
-
-from portfolio_calculations import compute_portfolio_rolling_returns
 
 # ─────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -306,11 +305,6 @@ with st.spinner("Loading data and computing..."):
     returns = compute_returns(merged_df, return_type)
     portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix = compute_portfolio_returns_simple(merged_df)
     rolling_returns = compute_rolling_returns(merged_df, window_periods, return_type)
-    portfolio_rolling_returns = compute_portfolio_rolling_returns(
-        np.array(list(my_portfolio_allocation.values())),
-        portfolio_returns_simple,
-        window_periods
-    )
 
 if len(merged_df) < window_periods:
     st.warning(
@@ -325,11 +319,13 @@ if len(merged_df) < window_periods:
 render_load_etf_data(tickers, spike_warnings, data_availability)
 render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, return_type, annualisation_factor)
 render_etf_prices(merged_df, tickers)
-render_rolling_returns(rolling_returns, portfolio_rolling_returns, tickers,
-                        rolling_window_years, return_type)
+render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type)
 render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_returns,
                            portfolio_cov_matrix, tickers, return_type, annualisation_factor,
                            risk_free_rate)
+render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
+                                my_portfolio_allocation, annualisation_factor, risk_free_rate,
+                                alpha, window_periods, rolling_window_years)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                     custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha)
