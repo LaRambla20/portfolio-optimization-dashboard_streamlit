@@ -34,6 +34,12 @@ For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python test_das
 
 Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all 9 section headers render plus portfolio card metrics. Screenshots are saved to `test_screenshots/` (gitignored).
 
+**Unit tests (no running app, no network needed):** `.venv\Scripts\python test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip). It also runs one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully if the network/SSL is unavailable.
+
+> **yfinance SSL gotcha:** yfinance uses `curl_cffi`, so the pip `--trusted-host` and git `schannel` workarounds do **not** apply to it. The app's `run_download`/`run_total_return_reconstruction` use a bare `yf.Ticker` (fine on the real machine). To drive yfinance for local validation on an SSL-intercepting machine, pass a relaxed session: `yf.Ticker(sym, session=curl_cffi.requests.Session(impersonate="chrome", verify=False))`.
+
+**Boot-check (fast path):** for sidebar-only / non-render changes, launch the app headless and grep the boot log for `error|traceback` instead of the full Playwright run — e.g. `streamlit run ... --server.headless true > boot.log 2>&1 &` then inspect `boot.log`.
+
 **Install Playwright** (already in venv; only needed once on a fresh clone):
 ```bash
 .venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org playwright
@@ -78,7 +84,7 @@ Key variables for optimization:
 
 ### Section Structure
 
-1. **Load ETF Data** — validates CSVs, checks price spikes, shows data availability gauge
+1. **Load ETF Data** — validates CSVs, checks price spikes, shows data availability gauge, a 💱 warning if any series isn't EUR, and (for `{ETF}_EXT` files) a 🧬 caption flagging reconstructed total-return rows
 2. **Per-ETF Analytics** — CAGR, simple/calendar-year returns, "Annualised Metrics by Look-back Period", **Max Drawdown** (always simple returns for consistency)
 3. **ETF Prices** — raw and normalized (base = 1000) price charts (merged df is built upstream via inner join)
 3b. **Rolling Returns** — moving-window returns (1/5/10 years) for **individual assets only** (the portfolio rolling-returns chart now lives in §5)
@@ -92,9 +98,33 @@ Key variables for optimization:
 
 §5 is the **one place** in the app that does **not** rebalance. Every other portfolio figure (the "My Portfolio" cards on the frontier, §8 VaR) uses the constant-weight series `portfolio_returns_simple.dot(weights)` (rebalanced to target weights each period). §5 instead builds a *drifting* value series via `buy_and_hold_value_series(merged_df, tickers, weights)`: each asset rebased to its first price, `V_t = Σ wᵢ·Pᵢₜ/Pᵢ₀`, `V₀ = 1` (scale-invariant — only weight proportions matter). All §5 metrics derive from this single series, so the **same portfolio's return/risk/drawdown legitimately differ between §5 and §6–§8** — a `st.info` banner in §5 flags this. Annualisation still follows the textbook-linear convention (`mean × N`, `std × √N`).
 
+### Currency handling (single base currency = EUR)
+
+**The app does no FX conversion anywhere except where noted here — every `adj close` is assumed already in EUR** (price-chart axes are hard-labeled `[EUR]`, portfolio weights derive from EUR market values). Feeding in a USD/GBP-priced series silently treats those prices as EUR, so its returns/vol and especially **correlations** (every same-currency asset shares a hidden FX factor) come out in the wrong numeraire, biasing the covariance matrix → frontier and VaR. No error is raised. Verified live: US-listed `IVV` shows 14.57%/yr in USD but 13.99%/yr once converted to EUR (matching the EUR-listed `SXR8.DE` at 13.84%).
+
+Two guards:
+- **Download auto-converts to EUR by default** (`run_download(..., convert_to_eur=True)`): detects the ticker's currency (`detect_currency`, via `fast_info`/`info`), and if not EUR scales every price column by Yahoo's `{CCY}EUR=X` rate (`fetch_eur_multiplier` → `apply_eur_conversion`; handles GBp/pence by `/100`). The sidebar **"Keep native currency (don't convert to EUR)"** checkbox (default off) is the escape hatch that stores raw prices instead. Conversion needs two network calls (the sniff + the FX series); if either fails the native series is stored and §1 warns — so the check below is the safety net, not redundant. Prefer the EUR-listed share class (`.MI`/`.DE`/`.AS`) when one exists — it's the same thing.
+- **§1 currency check** (`read_currency_info` → `render_load_etf_data`): warns if any loaded series isn't EUR. Every download writes a `currency` column (the stored currency: `EUR` when native or converted, else e.g. `USD`), so the check is offline; legacy CSVs lacking the column fall back to a cached network sniff.
+
+The on-disk `currency` column is a constant per file and, like the reconstruction tag columns, is ignored by the 2-column/`usecols` readers.
+
+### Total-return reconstruction (extending ETFs with index history)
+
+Accumulating ETFs (VWCE, EM57, …) only span a few years; the **price-return** indices they track (most Yahoo `^` tickers, all Stooq indices) run for decades but **exclude reinvested dividends**, so splicing one straight in front of an ETF biases every long-run figure low. The sidebar **🧬 Total-return reconstruction** panel (inside *Download settings*) fixes this:
+
+1. For each job — *(index ticker, calibrating ETF, optional FX ticker)* — it downloads all three at the selected interval(s).
+2. `synthesize_total_return` converts the index to the ETF's currency (`index / eurusd` — **FX first**, or `q_hat` absorbs FX drift), then calibrates the missing yield geometrically from the overlap: annual gross-up `f = (1+g_etf)/(1+g_index)`, reported `q_hat = f − 1` (this also absorbs TER/tracking — intentional, so the synthetic tail meets the real ETF seamlessly).
+3. Older index history is grossed up **on returns** (`f**(1/N)` per period) and **chained** to the real ETF (scaled to meet it at `join_date` — never raw-level concatenation), then saved as `{ETF}_EXT_data_{period}.csv` with the `synthetic` / `recon_yield` tag columns.
+
+Add the new `{ETF}_EXT` ticker to **My Portfolio** to analyze it. §1 shows a 🧬 caption flagging which rows are reconstructed (estimate, not measured).
+
+**The index must track the same underlying as the ETF** (e.g. `^GSPC` with an S&P 500 ETF). The calibration makes the index match the ETF over the overlap, so pairing mismatched underlyings (S&P 500 vs FTSE All-World) folds their *performance gap* into `q_hat` — `^GSPC`→`VWCE.MI` yields a nonsensical **−1.2%/yr** because US stocks outran the world 2020–2025. The runner emits a `⚠️` log line when `q_hat` lands outside ~0–6%/yr (also catches data quirks: splits, wrong FX, distributing-vs-accumulating share classes — e.g. `SXR8.DE` returned an implausibly low +0.1%). Tests: `test_total_return_synthesis.py` (deterministic math/splice/FX + save/read round-trip, plus a live `^GSPC` vs `^SP500TR` check that recovers q≈1.9%). Note: the live test fetches via a `curl_cffi` session with `verify=False` to bypass this machine's SSL interception — `run_total_return_reconstruction` itself uses a bare `yf.Ticker` like `run_download`, matching existing behavior.
+
 ### Data Format
 
 CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (period: daily/weekly/monthly) with columns: `date`, `adj close`.
+
+**Reconstructed (total-return) files** — `{ETF}_EXT_data_{period}.csv` — carry two extra columns: `synthetic` (bool: `True` for rows reconstructed from the index *before* the ETF's first date, `False` for real ETF rows) and `recon_yield` (the calibrated annual gross-up `q_hat`, filled only on synthetic rows). Files downloaded by `run_download` also carry a `currency` column (see **Currency handling**). All other readers slice the first two columns (`iloc[:, :2]`) or pass `usecols`, so they ignore the extras — only `read_synthetic_info` (§1 badge) and `read_currency_info` (§1 currency check) read them. See **Total-return reconstruction** and **Currency handling** below.
 
 ### VaR / CVaR Gotchas
 
@@ -121,6 +151,8 @@ Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58)
 - `compute_rolling_returns(merged_df, window_periods, return_type)` — rolling returns over moving window
 - `build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date)` — inner join of asset prices
 - `check_price_spikes(tickers, folder_path, filename_suffix, filter_date)` — detects >60% price moves
+- **Total-return reconstruction:** `synthesize_total_return(price_index, etf, eurusd, periods_per_year)` — calibrate `q_hat` from the ETF overlap + return the spliced EUR series; `build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_year)` — shape it into the `date,adj close,synthetic,recon_yield` CSV frame; `run_total_return_reconstruction(jobs, intervals, output_dir, log_queue)` — threaded download+splice+save (mirrors `run_download`); `read_synthetic_info(...)` — per-ticker tag metadata for the §1 badge
+- **Currency:** `run_download(..., convert_to_eur=True)` — downloads, auto FX-converts non-EUR to EUR (unless overridden), writes a `currency` column; `detect_currency(symbol, yf)` / `fetch_eur_multiplier(currency, yf_interval, end_date, yf)` / `apply_eur_conversion(data, eur_multiplier)` — the conversion helpers (last one is pure, unit-tested); `read_currency_info(tickers, folder_path, filename_suffix)` — resolves each ticker's currency (stored column, else cached network sniff) for the §1 check
 
 **portfolio_calculations.py:**
 - `portfolio_annualised_performance(weights, mean_returns, cov_matrix, ...)` — portfolio return/volatility

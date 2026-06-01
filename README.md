@@ -10,7 +10,9 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 - **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
 - **Rolling returns** — 1/5/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
-- **Data download** — built-in yfinance downloader with progress streaming
+- **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
+- **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
+- **Currency safety** — section 1 warns if any loaded series isn't in EUR (the app otherwise assumes a single base currency)
 - **Flexible inputs** — configurable portfolio weights, return type, confidence level, date filter
 
 ## Setup
@@ -28,7 +30,9 @@ python -m venv .venv
 
 1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
 
-2. **Add or refresh tickers** — expand the "Download ETF Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download.
+2. **Add or refresh tickers** — expand the "Download ETF Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** to store raw prices instead.
+
+3. **Extend an ETF with index history** *(optional)* — in the same panel, use **Total-return reconstruction** to pair a long price-return index (e.g. `^GSPC`) with the accumulating ETF that tracks it and an FX ticker (e.g. `EURUSD=X`). The result is saved as `{ETF}_EXT`; add it to your portfolio to analyze the extended history. The index must track the **same underlying** as the ETF (a recovered dividend yield outside ~0–4%/yr is the tell that it doesn't).
 
 ```bash
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
@@ -50,6 +54,12 @@ For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 HEADLESS=1 .venv\Scripts\python test_dashboard.py
 ```
 
+Unit tests for the total-return reconstruction and EUR-conversion logic run standalone (no app or network required):
+
+```bash
+.venv\Scripts\python test_total_return_synthesis.py
+```
+
 ## Project Structure
 
 ```
@@ -67,11 +77,13 @@ individual_indices_data/        # ETF CSVs (pre-loaded samples included; downloa
 
 CSVs must be named `{ticker}_data_{period}.csv` (e.g. `IWDA.AS_data_daily.csv`) with columns `date` and `adj close`. The built-in downloader produces this format automatically.
 
+Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT_data_{period}.csv` files add `synthetic` / `recon_yield` columns marking the reconstructed history. These extra columns are optional metadata — readers only need `date` and `adj close`.
+
 ## Dashboard Sections
 
 | # | Section | Description |
 |---|---------|-------------|
-| 1 | Load ETF Data | Spike detection, data availability gauge |
+| 1 | Load ETF Data | Spike detection, data availability gauge, non-EUR currency warning, reconstructed-history flag |
 | 2 | Per-ETF Analytics | CAGR, returns, drawdown per asset |
 | 3 | ETF Prices | Raw and normalized price charts |
 | 3b | Rolling Returns | Moving-window returns for individual assets |
