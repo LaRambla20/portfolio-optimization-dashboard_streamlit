@@ -4,10 +4,11 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 
 ## Features
 
+- **Input portfolio analysis** — your allocation as a **buy-and-hold** (un-rebalanced) portfolio: allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, plus headline return/risk metrics
 - **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP)
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
 - **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
-- **Rolling returns** — 1/5/10-year moving windows for individual assets and the portfolio
+- **Rolling returns** — 1/5/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming
 - **Flexible inputs** — configurable portfolio weights, return type, confidence level, date filter
@@ -41,7 +42,7 @@ A Playwright end-to-end test drives the full dashboard in a real browser. Start 
 .venv\Scripts\python test_dashboard.py
 ```
 
-This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
+This clicks **Run Analysis**, waits for all computations to finish, verifies all 9 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
 
 For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 
@@ -56,7 +57,7 @@ efficient_frontier_app/
 ├── efficient_frontier_app.py   # Entry point — sidebar, orchestration
 ├── portfolio_calculations.py   # Pure math: optimization, Monte Carlo, VaR/CVaR
 ├── data_handling.py            # CSV loading, merging, return computation
-├── ui_components.py            # Section renderers (8 sections)
+├── ui_components.py            # Section renderers (9 sections)
 └── descriptions.py             # Per-section "How to read this section" guides
 
 individual_indices_data/        # ETF CSVs (pre-loaded samples included; downloader writes here)
@@ -73,8 +74,9 @@ CSVs must be named `{ticker}_data_{period}.csv` (e.g. `IWDA.AS_data_daily.csv`) 
 | 1 | Load ETF Data | Spike detection, data availability gauge |
 | 2 | Per-ETF Analytics | CAGR, returns, drawdown per asset |
 | 3 | ETF Prices | Raw and normalized price charts |
-| 3b | Rolling Returns | Moving-window returns for assets and portfolio |
+| 3b | Rolling Returns | Moving-window returns for individual assets |
 | 4 | Returns & Statistics | Covariance/correlation matrices, return distributions |
-| 5 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) |
-| 6 | SciPy EF | Optimized efficient frontier via SLSQP |
-| 7 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics |
+| 5 | Input Portfolio Analysis | Your allocation as a buy-and-hold portfolio: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline metrics, historical VaR/CVaR, correlation heatmap |
+| 6 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) |
+| 7 | SciPy EF | Optimized efficient frontier via SLSQP |
+| 8 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics |
