@@ -196,7 +196,17 @@ risk_free_rate = st.sidebar.number_input(
     "Risk-free rate (€STR)", min_value=0.0, max_value=1.0, value=0.01932, step=0.001, format="%.5f"
 )
 return_type = st.sidebar.radio(
-    "Return type", options=["logarithmic", "simple"], index=0
+    "Return type",
+    options=["simple", "logarithmic"],
+    index=0,
+    help=(
+        "Scope: affects ONLY the §3b rolling-returns chart and the §4 distribution "
+        "statistics (Min/Max/Mean/Std) and daily-returns plot. CAGR, annualised "
+        "return/volatility, max drawdown, and ALL portfolio optimization (efficient "
+        "frontier, VaR, portfolio cards) always use simple returns. Pick 'logarithmic' "
+        "for a more statistically well-behaved view of the return distribution; 'simple' "
+        "for actual realised percentage gains."
+    ),
 )
 
 rolling_window_years = st.sidebar.selectbox(
@@ -436,7 +446,7 @@ if len(merged_df) < window_periods:
 # ─────────────────────────────────────────────────────────
 
 render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info, currency_info)
-render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, return_type, annualisation_factor)
+render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, annualisation_factor)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type)
 render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_returns,

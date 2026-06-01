@@ -70,7 +70,7 @@ Modular Streamlit dashboard split into 5 files inside `efficient_frontier_app/`.
 ### Critical Return Type Split
 
 The code maintains two separate return series:
-- `returns` — user-selected type (`return_type` toggle: "logarithmic" or "simple") used **only for single-asset display metrics**
+- `returns` — user-selected type (`return_type` toggle: "simple" (default) or "logarithmic"). **Narrow scope: only the §3b rolling-returns chart and the §4 distribution stats (Min/Max/Mean/Std) + daily-returns plot honor it.** §2 does **not** use it (CAGR, annualised metrics, and max drawdown are always simple); §4's covariance/correlation matrices and per-asset Sortino are always simple too. Each toggle-sensitive section prints a caption stating which return type is in use and why log is offered there (statistical/distribution view). `render_per_etf_analytics` no longer takes `return_type`.
 - `portfolio_returns_simple` — always simple returns, used for **all portfolio optimization** (Monte Carlo, SciPy, VaR)
 
 This split fixes the mathematical error where `sum(weights * log_returns)` incorrectly computes portfolio log returns (log returns aren't additive across assets).
@@ -89,7 +89,7 @@ Key variables for optimization:
 3. **ETF Prices** — raw and normalized (base = 1000) price charts (merged df is built upstream via inner join)
 3b. **Rolling Returns** — moving-window returns (1/5/10 years) for **individual assets only** (the portfolio rolling-returns chart now lives in §5)
 4. **Returns & Statistics** — covariance/correlation matrix **tables** (from simple returns), daily returns plot. The correlation **heatmap** moved to §5.
-5. **Input Portfolio Analysis** — the user's allocation as a **buy-and-hold** (un-rebalanced) portfolio: opens with an allocation pie ("Your Allocation", non-zero weights only) + normalised-weights table, then a cumulative-return chart (portfolio + per-asset overlays), annotated underwater curve, deepest-drawdown recovery + longest-underwater-stretch durations (calendar days, "≥ N days, ongoing" if unrecovered), headline metrics (avg annual return, annual vol, Sharpe, Sortino, max DD, historical VaR/CVaR), portfolio rolling-returns chart, and the asset correlation heatmap. See **Buy-and-hold basis** below.
+5. **Input Portfolio Analysis** — the user's allocation as a **buy-and-hold** (un-rebalanced) portfolio: opens with an allocation pie ("Your Allocation", non-zero weights only) + normalised-weights table, then a cumulative-return chart (portfolio + per-asset overlays), annotated underwater curve, deepest-drawdown recovery + longest-underwater-stretch durations (calendar days, "≥ N days, ongoing" if unrecovered), headline metrics (geometric **CAGR**, arithmetic avg annual return, annual vol, Sharpe, Sortino, max DD, historical VaR/CVaR), portfolio rolling-returns chart, and the asset correlation heatmap. See **Buy-and-hold basis** below.
 6. **Monte Carlo Efficient Frontier** — random portfolio simulation, Sortino ratios
 7. **SciPy Efficient Frontier** — optimization via `scipy.optimize.minimize`, efficient frontier line
 8. **VaR Analysis** — per-period parametric (drift-free `σ·z`) and historical VaR/CVaR shown side by side, plus skew/excess-kurtosis fat-tail diagnostics. Historical figures guarded by a data-sufficiency check (`n_tail = round((1-alpha)*n)`). **No VaR frontier** (dropped: drift-free VaR ∝ volatility, so it was redundant with §7).

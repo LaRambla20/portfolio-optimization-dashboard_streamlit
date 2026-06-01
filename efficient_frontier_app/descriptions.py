@@ -97,9 +97,12 @@ $$\text{CAGR} = \left(\frac{P_{\text{end}}}{P_{\text{start}}}\right)^{1/n} - 1$$
 compounding already baked in — the honest number you'd compare against a savings rate or
 another fund.
 
-*Why it's useful:* it collapses a messy price history into one comparable yearly figure. Note
-it's usually a little **lower** than the *Average annual return* below: CAGR reflects how gains
-and losses really compounded, whereas the average just averages each period's return.
+*Why it's useful:* it collapses a messy price history into one comparable yearly figure. It
+differs from the *Average annual return* below because that figure is a **linear** mean × N (it
+just averages each period's return, with no compounding), whereas CAGR reflects how gains and
+losses actually compounded. Two effects pull in opposite directions — volatility drag lowers
+CAGR, while the compounding the linear average omits raises it — so CAGR can land a little below
+**or** above the average return.
 """,
 
     "avg_annual_return": r"""

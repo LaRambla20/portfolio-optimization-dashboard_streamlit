@@ -320,7 +320,7 @@ def render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_i
 # ─────────────────────────────────────────────────────────────────
 
 def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
-                              return_type, annualisation_factor):
+                              annualisation_factor):
     st.header("2. Per-ETF Analytics")
     render_section_help(
         "This section looks at each ETF on its own: how much it returned, how much it swung, "
@@ -380,12 +380,6 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
                                    "CAGR": f"{cagr:.2%}"})
             st.subheader("CAGR (Compound Annual Growth Rate)")
             st.dataframe(pd.DataFrame(cagr_rows), width="stretch", hide_index=True)
-
-            if return_type == "logarithmic":
-                subdf["ret"] = np.log(subdf["adj close"] / subdf["adj close"].shift(1))
-            else:
-                subdf["ret"] = subdf["adj close"].pct_change()
-            subdf = subdf.dropna(subset=["ret"])
 
             st.subheader("Annualised Metrics (simple returns, full history)")
             simple_ret = subdf["adj close"].pct_change().dropna()
@@ -507,6 +501,20 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years, retur
 
     # Individual assets (the portfolio rolling-returns chart lives in §5, Input Portfolio Analysis).
     st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns ({return_type.capitalize()})")
+    if return_type == "logarithmic":
+        st.caption(
+            "📐 This chart uses **logarithmic** returns (`ln(Pₜ/Pₜ₋₁)`) because you selected "
+            "'logarithmic' in the sidebar. Log returns are time-additive, so a multi-year window "
+            "is a clean sum of its periods, and they are closer to normally distributed — handy "
+            "when comparing the *shape* of long-horizon outcomes. Switch to 'simple' for the "
+            "actual realised percentage gain over each window."
+        )
+    else:
+        st.caption(
+            "This chart uses **simple** returns (`Pₜ/Pₜ₋₁ − 1`) — the actual realised percentage "
+            "gain over each window. Switch to 'logarithmic' in the sidebar for a time-additive, "
+            "more normally-distributed view."
+        )
     fig, ax = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
         ax.plot(rolling_returns["date"], rolling_returns[ticker], lw=1, label=ticker)
@@ -554,6 +562,24 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
     with col4:
         st.subheader("Std Dev (%)")
         st.dataframe((returns_std_dev * 100).round(2).to_frame(f"Std Dev ({return_type})"), width="stretch")
+
+    if return_type == "logarithmic":
+        st.caption(
+            "📐 The four summary statistics above and the daily-returns plot below use "
+            "**logarithmic** returns (`ln(Pₜ/Pₜ₋₁)`) because you selected 'logarithmic' in the "
+            "sidebar — they are closer to normally distributed, the better lens for the *shape* "
+            "of the return distribution. The covariance and correlation matrices and every "
+            "optimization figure below still use **simple** returns: log returns are not additive "
+            "across assets (`Σ wᵢ·ln rᵢ ≠ ln r_portfolio`), so using them would misstate "
+            "portfolio risk."
+        )
+    else:
+        st.caption(
+            "The four summary statistics above and the daily-returns plot below use **simple** "
+            "returns (`Pₜ/Pₜ₋₁ − 1`). Switch to 'logarithmic' in the sidebar for a distribution "
+            "view that is closer to normal. The covariance/correlation matrices and all "
+            "optimization always use simple returns regardless of this toggle."
+        )
 
     single_asset_sortino = {}
     for t in tickers:
@@ -604,7 +630,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         "This section analyses your actual allocation as a buy-and-hold portfolio — set once and "
         "never rebalanced — covering its growth, its worst falls and recovery times, and its tail risk.",
         ["buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
-         "max_drawdown", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
+         "max_drawdown", "cagr", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
          "var_historical", "cvar", "rolling_returns_portfolio", "correlation"],
     )
 
@@ -645,6 +671,9 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     dd_dev = downside_deviation_series(bh_ret, N, risk_free_rate)
     sortino = (ann_ret - risk_free_rate) / dd_dev if dd_dev > 0 else np.nan
 
+    years = (value.index[-1] - value.index[0]).days / 365.25
+    cagr = (value.iloc[-1] / value.iloc[0]) ** (1.0 / years) - 1.0 if years > 0 else np.nan
+
     drawdown = value / value.cummax() - 1.0
     mdd = abs(drawdown.min())
 
@@ -664,17 +693,26 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     )
 
     # ── Headline metrics ────────────────────────────────────────────────────────────────
-    a1, a2, a3, a4 = st.columns(4)
+    a1, a2, a3, a4, a5 = st.columns(5)
     a1.metric(
+        "CAGR (compound)", f"{cagr:.2%}" if not np.isnan(cagr) else "n/a",
+        help="Geometric compound annual growth rate of the buy-and-hold value: "
+             "(V_end / V_start)^(1/years) − 1. The single steady yearly rate that reproduces the "
+             "actual end value — what you really earned per year with compounding baked in. "
+             "Differs from the arithmetic 'Average annual return' alongside, which is a linear "
+             "(non-compounded) mean × N: volatility drag pulls CAGR down, intra-year compounding "
+             "pulls it up, so either can be the larger.",
+    )
+    a2.metric(
         "Average annual return", f"{ann_ret:.2%}",
         help="Mean per-period return of the buy-and-hold portfolio, annualised linearly (mean × N). "
-             "An arithmetic/expected figure, not the compounded CAGR.",
+             "An arithmetic/expected figure, distinct from the compounded CAGR shown alongside.",
     )
-    a2.metric("Annual volatility", f"{ann_vol:.2%}",
+    a3.metric("Annual volatility", f"{ann_vol:.2%}",
               help="Standard deviation of per-period returns, annualised as σ·√N.")
-    a3.metric("Sharpe ratio", f"{sharpe:.3f}" if not np.isnan(sharpe) else "n/a",
+    a4.metric("Sharpe ratio", f"{sharpe:.3f}" if not np.isnan(sharpe) else "n/a",
               help="(Average annual return − risk-free rate) ÷ annual volatility.")
-    a4.metric("Sortino ratio", f"{sortino:.3f}" if not np.isnan(sortino) else "n/a",
+    a5.metric("Sortino ratio", f"{sortino:.3f}" if not np.isnan(sortino) else "n/a",
               help="Like Sharpe but divides by downside deviation only — penalises harmful "
                    "volatility, not upside.")
 
