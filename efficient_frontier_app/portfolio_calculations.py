@@ -18,6 +18,33 @@ def portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualis
     return std, average
 
 
+def real_deflator(date_index, annual_inflation):
+    """Cumulative inflation deflator for converting a nominal level series to real terms.
+
+    ``D_t = (1 + π)^(years elapsed since the first date)`` with ``D_0 = 1``, indexed by the same
+    dates. Dividing a nominal price/value series by this expresses it in the purchasing power of the
+    start date (constant-currency, "real" terms). ``annual_inflation`` is a decimal (0.02 = 2%/yr);
+    a rate of 0 returns all ones (a no-op), so callers can deflate unconditionally if they wish.
+
+    Calendar-time based (``.days / 365.25``), not row count, so it is robust to irregular spacing in
+    the merged inner-join (mixed trading calendars, gaps). Subtracting a *constant* rate this way
+    leaves variances/covariances ~unchanged — only means/levels shift — so volatility, correlation
+    and the efficient-frontier weights are inflation-invariant while CAGR drops and drawdowns deepen.
+    """
+    years = (date_index - date_index[0]).days / 365.25
+    return pd.Series((1.0 + annual_inflation) ** years, index=date_index)
+
+
+def to_real(level_series, annual_inflation):
+    """Deflate a nominal price/value *level* Series to real terms via ``real_deflator``.
+
+    Thin convenience wrapper: ``level_series / real_deflator(level_series.index, annual_inflation)``.
+    Pass ``annual_inflation=0`` for a no-op. Apply to *levels* (prices, portfolio value), not to a
+    return series — deflating the level and then differencing yields the correct real returns.
+    """
+    return level_series / real_deflator(level_series.index, annual_inflation)
+
+
 def cvar(returns, alpha=0.05):
     """Historical CVaR (Expected Shortfall) from a return series."""
     var_threshold = returns.quantile(alpha)

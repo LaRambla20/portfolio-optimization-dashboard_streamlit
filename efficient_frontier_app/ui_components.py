@@ -33,6 +33,7 @@ from portfolio_calculations import (
     deepest_drawdown_episode,
     longest_underwater_episode,
     downside_deviation_series,
+    real_deflator,
 )
 from data_handling import evaluate_simple_return, evaluate_CAGR, evaluate_return_metrics
 from descriptions import render_section_help
@@ -344,20 +345,30 @@ def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availabil
 # ─────────────────────────────────────────────────────────────────
 
 def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
-                              annualisation_factor):
+                              annualisation_factor, real_terms=False, annual_inflation=0.0):
     st.header("2. Per-Asset Analytics")
+    if real_terms:
+        st.caption(f"📉 **Real terms** — prices deflated by an assumed {annual_inflation:.1%}/yr "
+                   "inflation, so returns/CAGR are in today's purchasing power.")
     render_section_help(
         "This section looks at each asset on its own: how much it returned, how much it swung, "
         "and its worst fall — so you understand each holding before combining them.",
         ["simple_return", "calendar_year_return", "cagr", "avg_annual_return",
-         "annual_volatility", "max_drawdown", "cumulative_return", "lookback_annual_metrics"],
+         "annual_volatility", "max_drawdown", "cumulative_return", "lookback_annual_metrics"]
+        + (["real_returns"] if real_terms else []),
     )
+
+    real_sfx = " (real)" if real_terms else ""
 
     for ticker in tickers:
         subdf = merged_df[["date", ticker]].copy().rename(columns={ticker: "adj close"})
         subdf = subdf.sort_values("date")
         subdf = subdf[subdf["date"] <= filter_date_string]
         subdf.set_index("date", inplace=True)
+        # Deflate the price level once; every figure below (simple/calendar returns, CAGR, annualised
+        # metrics, cumulative chart, look-back tables) then reads real prices with no further changes.
+        if real_terms:
+            subdf["adj close"] = subdf["adj close"] / real_deflator(subdf.index, annual_inflation)
 
         with st.expander(f"{ticker}", expanded=False):
             end_date = subdf.index[-1]
@@ -424,9 +435,9 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
             cumulative_ret = (1 + simple_ret).cumprod() - 1
             fig_cum, ax_cum = plt.subplots(figsize=(10, 4))
             ax_cum.plot(cumulative_ret.index, cumulative_ret.values, lw=1)
-            ax_cum.set_title(f"{ticker} — Cumulative Returns")
+            ax_cum.set_title(f"{ticker} — Cumulative Returns{real_sfx}")
             ax_cum.set_xlabel("Date")
-            ax_cum.set_ylabel("Cumulative Return")
+            ax_cum.set_ylabel(f"Cumulative Return{real_sfx}")
             ax_cum.grid(True)
             st.pyplot(fig_cum)
             plt.close(fig_cum)
@@ -627,17 +638,24 @@ def _fmt_period(days, ongoing):
 def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                     my_portfolio_allocation, annualisation_factor,
                                     risk_free_rate, alpha, window_periods, rolling_window_years,
-                                    rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)"):
+                                    rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)",
+                                    real_terms=False, annual_inflation=0.0):
     st.header("6. Input Portfolio Analysis")
     st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar).")
+    if real_terms:
+        st.caption(f"📉 **Real terms** — value deflated by an assumed {annual_inflation:.1%}/yr "
+                   "inflation; the risk-free rate is deflated to match.")
     render_section_help(
         "This section analyses your actual allocation, held at the rebalancing cadence you chose in "
         "the sidebar, covering its growth, its worst falls and recovery times, and its tail risk.",
         ["rebalancing", "buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
          "max_drawdown", "cagr", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
          "rolling_returns_portfolio", "correlation",
-         "zscore", "var_parametric", "var_historical", "cvar", "return_distribution"],
+         "zscore", "var_parametric", "var_historical", "cvar", "return_distribution"]
+        + (["real_returns"] if real_terms else []),
     )
+
+    real_sfx = " (real)" if real_terms else ""
 
     weights = np.array([my_portfolio_allocation[t] for t in tickers], dtype=np.float64)
 
@@ -664,6 +682,15 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 
     # ── Rebalanced value series (the single basis for every figure below) ────────────────
     value = rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods)
+    # Deflate the value level once: bh_ret and every downstream figure (CAGR, vol, Sharpe, Sortino,
+    # drawdown, underwater episodes, rolling returns, and the tail-risk subsection) then read real
+    # terms with no further changes. The risk-free rate is deflated to match so the risk premium —
+    # hence Sharpe/Sortino — stays meaningful (and ~invariant) in real terms.
+    if real_terms:
+        value = value / real_deflator(value.index, annual_inflation)
+        rf_used = (1.0 + risk_free_rate) / (1.0 + annual_inflation) - 1.0
+    else:
+        rf_used = risk_free_rate
     bh_ret = value.pct_change().dropna()
     if len(bh_ret) < 2:
         st.warning("Not enough overlapping history to analyse the portfolio.")
@@ -672,9 +699,9 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     N = annualisation_factor
     ann_ret = bh_ret.mean() * N
     ann_vol = bh_ret.std() * np.sqrt(N)
-    sharpe = (ann_ret - risk_free_rate) / ann_vol if ann_vol > 0 else np.nan
-    dd_dev = downside_deviation_series(bh_ret, N, risk_free_rate)
-    sortino = (ann_ret - risk_free_rate) / dd_dev if dd_dev > 0 else np.nan
+    sharpe = (ann_ret - rf_used) / ann_vol if ann_vol > 0 else np.nan
+    dd_dev = downside_deviation_series(bh_ret, N, rf_used)
+    sortino = (ann_ret - rf_used) / dd_dev if dd_dev > 0 else np.nan
 
     years = (value.index[-1] - value.index[0]).days / 365.25
     cagr = (value.iloc[-1] / value.iloc[0]) ** (1.0 / years) - 1.0 if years > 0 else np.nan
@@ -688,6 +715,8 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         "efficient-frontier cards instead assume per-period rebalancing (the MPT basis), so the "
         "*same* portfolio's return, risk and drawdown can legitimately differ there — unless you "
         "set the cadence to 'Every period'."
+        + (f" Figures are in **real terms** (deflated by {annual_inflation:.1%}/yr): CAGR and average "
+           "return drop and drawdowns deepen, but volatility is ~unchanged." if real_terms else "")
     )
 
     # ── Headline metrics (growth & drawdown; tail risk lives in the subsection below) ─────
@@ -722,15 +751,17 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     st.subheader("Cumulative Returns (buy-and-hold)")
     prices = merged_df.set_index("date")[tickers]
     norm = prices / prices.iloc[0]
+    if real_terms:  # deflate the per-asset overlays to match the (real) portfolio line
+        norm = norm.div(real_deflator(norm.index, annual_inflation), axis=0)
     pct = plt.FuncFormatter(lambda y, _: f"{y:.0%}")
     fig_cum, ax_cum = plt.subplots(figsize=(12, 5))
     for t in tickers:
         ax_cum.plot(norm.index, norm[t] - 1.0, lw=1, alpha=0.45, label=t)
     ax_cum.plot(value.index, value - 1.0, lw=2.2, color="black", label="Portfolio")
     ax_cum.axhline(0, color="#999", lw=0.8)
-    ax_cum.set_title("Cumulative Return Since Start")
+    ax_cum.set_title(f"Cumulative Return Since Start{real_sfx}")
     ax_cum.set_xlabel("Date")
-    ax_cum.set_ylabel("Cumulative Return")
+    ax_cum.set_ylabel(f"Cumulative Return{real_sfx}")
     ax_cum.yaxis.set_major_formatter(pct)
     ax_cum.legend(title="Holding", ncol=2)
     ax_cum.grid(True, alpha=0.3)
@@ -765,7 +796,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
             ax_uw.axvline(d_rec, color="#4575b4", ls="--", lw=1.2, label="Recovered")
 
     ax_uw.axhline(0, color="#999", lw=0.8)
-    ax_uw.set_title("Drawdown From Running Peak")
+    ax_uw.set_title(f"Drawdown From Running Peak{real_sfx}")
     ax_uw.set_xlabel("Date")
     ax_uw.set_ylabel("Drawdown")
     ax_uw.yaxis.set_major_formatter(pct)
@@ -809,9 +840,9 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         roll = (value / value.shift(window_periods) - 1.0).dropna()
         fig_rr, ax_rr = plt.subplots(figsize=(12, 5))
         ax_rr.plot(roll.index, roll.values, lw=1.5, color="black", label="Portfolio")
-        ax_rr.set_title(f"Portfolio Rolling {rolling_window_years}-Year Returns")
+        ax_rr.set_title(f"Portfolio Rolling {rolling_window_years}-Year Returns{real_sfx}")
         ax_rr.set_xlabel("Date")
-        ax_rr.set_ylabel("Rolling Return")
+        ax_rr.set_ylabel(f"Rolling Return{real_sfx}")
         ax_rr.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
         ax_rr.legend()
         ax_rr.grid(True, alpha=0.3)
@@ -823,6 +854,9 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 
     # ── Asset correlation heatmap (moved from §5) ───────────────────────────────────────
     st.subheader("Asset Correlation Heatmap (simple returns)")
+    if real_terms:
+        st.caption("Unchanged by the real-terms setting — subtracting a constant inflation rate "
+                   "leaves correlations (and volatility) unaffected.")
     fig_corr, ax_corr = plt.subplots(figsize=(8, 5))
     sns.heatmap(portfolio_returns_simple.corr(), annot=True, cmap="coolwarm", center=0, ax=ax_corr)
     ax_corr.set_title("Asset Correlation Matrix (simple returns)")
@@ -841,11 +875,16 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 
 def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
-                        custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha):
+                        custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha,
+                        real_terms=False):
     st.header("7. Monte Carlo Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
                "sidebar Rebalancing-frequency setting (which governs §6).")
+    if real_terms:
+        st.caption("💶 Shown in **nominal** terms despite the real-returns setting: a constant inflation "
+                   "rate leaves the efficient-frontier *weights* unchanged (the real risk premium is "
+                   "inflation-invariant) — it would only shift the return axis down by the inflation rate.")
     render_section_help(
         "This section randomly simulates thousands of portfolios to map the trade-off between "
         "risk and return, and highlights a few notable ones.",
@@ -1006,11 +1045,15 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
 def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                     my_portfolio_allocation, alpha):
+                     my_portfolio_allocation, alpha, real_terms=False):
     st.header("8. Scipy Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
                "sidebar Rebalancing-frequency setting (which governs §6).")
+    if real_terms:
+        st.caption("💶 Shown in **nominal** terms despite the real-returns setting: a constant inflation "
+                   "rate leaves the efficient-frontier *weights* unchanged (the real risk premium is "
+                   "inflation-invariant) — it would only shift the return axis down by the inflation rate.")
     render_section_help(
         "This section mathematically solves for the best portfolios — rather than guessing "
         "randomly — and draws the efficient frontier: the best return achievable at each level of risk.",

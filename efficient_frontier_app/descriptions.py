@@ -569,6 +569,30 @@ skew: mean above median points to a right tail, below to a left tail. Both stay 
 median has no linear `×N` annualisation).
 """,
 
+    "real_returns": r"""
+**Real (inflation-adjusted) terms**
+
+*How it's computed:* with the sidebar toggle on, every price/value level is deflated by a constant
+assumed inflation rate $\pi$ before any figure is computed — divided by a cumulative factor that
+grows with calendar time since the start date:
+
+$$V^{\text{real}}_t = \frac{V_t}{(1+\pi)^{\,(\text{years since start})}},\qquad r^{\text{real}} = \frac{1+r^{\text{nom}}}{1+\pi}-1$$
+
+(the Fisher relation). The risk-free rate is deflated the same way so the Sharpe/Sortino numerator
+stays consistent.
+
+*What it means for you:* figures are expressed in today's purchasing power — what your money can
+actually buy — rather than headline euros. A 6% nominal return with 2% inflation is really ~3.9%.
+
+*Why it's useful — and what it does* ***not*** *change:* subtracting a **constant** rate shifts
+every return down by about $\pi$, so **CAGR and average return drop** and **drawdowns deepen and
+last longer** (flat nominal value is a real loss). But a constant offset can't change the *spread*
+of returns, so **volatility, correlations and the parametric `σ·z` VaR are ~unchanged**, and
+because the risk premium $r^{\text{real}}-r_f^{\text{real}}\approx r^{\text{nom}}-r_f^{\text{nom}}$
+is inflation-invariant, **Sharpe, Sortino and the §7/§8 efficient-frontier weights don't move** —
+which is exactly why the optimization sections stay nominal.
+""",
+
 }
 
 

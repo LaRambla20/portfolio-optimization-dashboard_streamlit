@@ -10,13 +10,14 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
 - **Per-asset analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
 - **Simple returns throughout** — one consistent return definition (actual realised % change) across every section and all optimization, so there's no return-type toggle to reason about
+- **Real (inflation-adjusted) terms** *(optional)* — a sidebar toggle deflates the performance sections (§2 Per-Asset Analytics and §6 Input Portfolio, including its tail risk) by an assumed constant annual inflation rate you set, so figures read in today's purchasing power. A constant rate lowers CAGR/average returns and deepens drawdowns, but **leaves volatility, correlations and the efficient-frontier weights unchanged** (the real risk premium is inflation-invariant) — so the §7/§8 optimization sections stay nominal and say so
 - **Rolling returns** — 1/2/3/5/7/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
 - **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
 - **Data-quality checks** — section 1 reports any **recorded stock splits** (read straight from yfinance's `stock splits` column — informational, since Adj Close is already split-adjusted) and flags **statistically anomalous price moves** with a robust, self-calibrating outlier test that adapts per asset and per interval (so genuine crypto swings aren't false-flagged)
 - **Currency safety** — section 1 warns if any loaded series isn't in EUR (the app otherwise assumes a single base currency)
-- **Flexible inputs** — configurable portfolio weights, rebalancing frequency, confidence level, date filter
+- **Flexible inputs** — configurable portfolio weights, rebalancing frequency, real-vs-nominal terms (with assumed inflation rate), confidence level, date filter
 
 ## Setup
 
@@ -36,6 +37,8 @@ python -m venv .venv
 2. **Add or refresh tickers** — expand the "Download Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** to store raw prices instead.
 
 3. **Extend an ETF with index history** *(optional)* — in the same panel, use **Total-return reconstruction** to pair a long price-return index (e.g. `^GSPC`) with the accumulating ETF that tracks it and an FX ticker (e.g. `EURUSD=X`). The result is saved as `{ETF}_EXT`; add it to your portfolio to analyze the extended history. The index must track the **same underlying** as the ETF (a recovered dividend yield outside ~0–4%/yr is the tell that it doesn't).
+
+4. **View in real terms** *(optional)* — tick **Show real (inflation-adjusted) returns** in the sidebar; an **Assumed annual inflation (%)** field appears beneath it (default 2%) for you to set. The Per-Asset Analytics and Input Portfolio sections then report in today's purchasing power.
 
 ```bash
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
@@ -57,11 +60,12 @@ For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 HEADLESS=1 .venv\Scripts\python test_dashboard.py
 ```
 
-Unit tests run standalone (no app or network required) — total-return reconstruction / EUR-conversion logic, and the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection):
+Unit tests run standalone (no app or network required) — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), and the inflation deflator behind the real-terms toggle (constant-rate deflation shifts means but leaves volatility unchanged and deepens drawdowns):
 
 ```bash
 .venv\Scripts\python test_total_return_synthesis.py
 .venv\Scripts\python test_rebalancing.py
+.venv\Scripts\python test_real_terms.py
 ```
 
 ## Project Structure
@@ -88,11 +92,11 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | # | Section | Description |
 |---|---------|-------------|
 | 1 | Load Data | Recorded stock-split report, price-anomaly detection, data availability gauge, non-EUR currency warning, reconstructed-history flag |
-| 2 | Per-Asset Analytics | CAGR, returns, drawdown per asset |
+| 2 | Per-Asset Analytics | CAGR, returns, drawdown per asset (optionally in real, inflation-adjusted terms) |
 | 3 | Per-Asset Prices | Raw and normalized price charts |
 | 4 | Per-Asset Rolling Returns | Moving-window returns for individual assets |
 | 5 | Per-Asset Returns & Statistics | Per-asset min/max/mean/median/std, Sortino, covariance/correlation matrices, return distributions |
-| 6 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default): allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
+| 6 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default), optionally in real (inflation-adjusted) terms: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
 | 7 | Monte Carlo Efficient Frontier Portfolio Optimization | Random portfolio simulation (Sharpe & Sortino) — per-period rebalancing |
 | 8 | Scipy Efficient Frontier Portfolio Optimization | Optimized efficient frontier via SLSQP — per-period rebalancing |
 

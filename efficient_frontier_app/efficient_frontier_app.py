@@ -214,6 +214,27 @@ rebalancing_frequency = st.sidebar.selectbox(
          "(weights drift).",
 )
 
+real_terms = st.sidebar.checkbox(
+    "Show real (inflation-adjusted) returns",
+    value=False,
+    help="Deflate by an assumed constant inflation rate so figures are in today's purchasing power. "
+         "Affects §2 (Per-Asset Analytics) and §6 (Input Portfolio, incl. its tail risk). A constant "
+         "rate lowers CAGR/average returns and deepens drawdowns, but leaves volatility, correlations "
+         "and the §7/§8 efficient-frontier weights unchanged (the real risk premium is "
+         "inflation-invariant), so those stay nominal.",
+)
+# The inflation input only appears when the toggle is on, so it's visually clear the two go
+# together (an always-shown field would do nothing while the toggle is off — confusing).
+if real_terms:
+    annual_inflation_pct = st.sidebar.number_input(
+        "Assumed annual inflation (%)",
+        min_value=0.0, max_value=20.0, value=2.0, step=0.1, format="%.1f",
+        help="Constant yearly inflation rate used to deflate §2 and §6 (e.g. Eurozone HICP ≈ 2%).",
+    )
+    annual_inflation = annual_inflation_pct / 100.0
+else:
+    annual_inflation = 0.0
+
 alpha = st.sidebar.slider(
     "VaR confidence level (α)", min_value=0.80, max_value=0.99, value=0.95, step=0.01
 )
@@ -459,7 +480,8 @@ if len(merged_df) < window_periods:
 # ─────────────────────────────────────────────────────────
 
 render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability, synthetic_info, currency_info)
-render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, annualisation_factor)
+render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
+                         annualisation_factor, real_terms, annual_inflation)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years)
 render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
@@ -468,14 +490,16 @@ render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
 render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                 my_portfolio_allocation, annualisation_factor, risk_free_rate,
                                 alpha, window_periods, rolling_window_years,
-                                rebalance_every_periods, rebalance_label)
+                                rebalance_every_periods, rebalance_label,
+                                real_terms, annual_inflation)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
-                    custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha)
+                    custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha,
+                    real_terms)
 render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                   tickers, annualisation_factor, risk_free_rate, num_portfolios,
                   num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                  my_portfolio_allocation, alpha)
+                  my_portfolio_allocation, alpha, real_terms)
 
 # End-of-pipeline signal (every section above has rendered). Also the e2e test's "done" marker.
 st.success(" Analysis complete!")
