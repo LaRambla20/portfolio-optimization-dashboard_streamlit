@@ -488,7 +488,7 @@ def render_etf_prices(merged_df, tickers):
     return norm_df
 
 
-def render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type):
+def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
     st.header("3b. Rolling Returns")
     render_section_help(
         "This section shows returns over long rolling windows, so you can see what an investor "
@@ -500,21 +500,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years, retur
         return
 
     # Individual assets (the portfolio rolling-returns chart lives in §5, Input Portfolio Analysis).
-    st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns ({return_type.capitalize()})")
-    if return_type == "logarithmic":
-        st.caption(
-            "📐 This chart uses **logarithmic** returns (`ln(Pₜ/Pₜ₋₁)`) because you selected "
-            "'logarithmic' in the sidebar. Log returns are time-additive, so a multi-year window "
-            "is a clean sum of its periods, and they are closer to normally distributed — handy "
-            "when comparing the *shape* of long-horizon outcomes. Switch to 'simple' for the "
-            "actual realised percentage gain over each window."
-        )
-    else:
-        st.caption(
-            "This chart uses **simple** returns (`Pₜ/Pₜ₋₁ − 1`) — the actual realised percentage "
-            "gain over each window. Switch to 'logarithmic' in the sidebar for a time-additive, "
-            "more normally-distributed view."
-        )
+    st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns")
     fig, ax = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
         ax.plot(rolling_returns["date"], rolling_returns[ticker], lw=1, label=ticker)
@@ -534,8 +520,8 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years, retur
 # SECTION 4 — RETURNS & STATISTICS
 # ─────────────────────────────────────────────────────────────────
 
-def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_returns,
-                               portfolio_cov_matrix, tickers, return_type, annualisation_factor,
+def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
+                               portfolio_cov_matrix, tickers, annualisation_factor,
                                risk_free_rate):
     st.header("4. Returns & Statistics")
     render_section_help(
@@ -544,42 +530,25 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
         ["return_stats", "sortino", "covariance", "correlation"],
     )
 
-    min_return = returns.min()
-    max_return = returns.max()
-    mean_returns = returns.mean()
-    returns_std_dev = returns.std()
+    min_return = portfolio_returns_simple.min()
+    max_return = portfolio_returns_simple.max()
+    mean_returns = portfolio_returns_simple.mean()
+    returns_std_dev = portfolio_returns_simple.std()
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.subheader(f"Min Return ({return_type}, %)")
+        st.subheader("Min Return (%)")
         st.dataframe((min_return * 100).round(2).to_frame("Min"), width="stretch")
     with col2:
-        st.subheader(f"Max Return ({return_type}, %)")
+        st.subheader("Max Return (%)")
         st.dataframe((max_return * 100).round(2).to_frame("Max"), width="stretch")
     with col3:
-        st.subheader(f"Mean Return ({return_type}, %)")
+        st.subheader("Mean Return (%)")
         st.dataframe((mean_returns * 100).round(2).to_frame("Mean"), width="stretch")
     with col4:
         st.subheader("Std Dev (%)")
-        st.dataframe((returns_std_dev * 100).round(2).to_frame(f"Std Dev ({return_type})"), width="stretch")
-
-    if return_type == "logarithmic":
-        st.caption(
-            "📐 The four summary statistics above and the daily-returns plot below use "
-            "**logarithmic** returns (`ln(Pₜ/Pₜ₋₁)`) because you selected 'logarithmic' in the "
-            "sidebar — they are closer to normally distributed, the better lens for the *shape* "
-            "of the return distribution. The covariance and correlation matrices and every "
-            "optimization figure below still use **simple** returns: log returns are not additive "
-            "across assets (`Σ wᵢ·ln rᵢ ≠ ln r_portfolio`), so using them would misstate "
-            "portfolio risk."
-        )
-    else:
-        st.caption(
-            "The four summary statistics above and the daily-returns plot below use **simple** "
-            "returns (`Pₜ/Pₜ₋₁ − 1`). Switch to 'logarithmic' in the sidebar for a distribution "
-            "view that is closer to normal. The covariance/correlation matrices and all "
-            "optimization always use simple returns regardless of this toggle."
-        )
+        st.dataframe((returns_std_dev * 100).round(2).to_frame("Std Dev"), width="stretch")
+    st.caption("All figures are per-period **simple** returns (the data period selected in the sidebar).")
 
     single_asset_sortino = {}
     for t in tickers:
@@ -602,11 +571,12 @@ def render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_
     st.caption("The correlation heatmap is shown in §5, Input Portfolio Analysis.")
 
     fig_ret, ax_ret = plt.subplots(figsize=(12, 5))
-    for c in returns.columns.values:
-        ax_ret.plot(returns.index, returns[c] * 100, lw=1, alpha=0.8, label=c)
+    for c in portfolio_returns_simple.columns.values:
+        ax_ret.plot(portfolio_returns_simple.index, portfolio_returns_simple[c] * 100,
+                    lw=1, alpha=0.8, label=c)
     ax_ret.legend(loc="upper right", fontsize=10)
-    ax_ret.set_ylabel(f"{return_type} returns [%]")
-    ax_ret.set_title(f"ETF {return_type.capitalize()} Returns")
+    ax_ret.set_ylabel("Return [%]")
+    ax_ret.set_title("ETF Returns")
     st.pyplot(fig_ret)
     plt.close(fig_ret)
 

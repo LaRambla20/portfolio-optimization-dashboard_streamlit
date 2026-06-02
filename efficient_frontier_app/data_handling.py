@@ -106,16 +106,6 @@ def build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date_st
 
 
 @st.cache_data
-def compute_returns(merged_df, return_type):
-    table = merged_df.set_index("date")
-    if return_type == "simple":
-        returns = table.pct_change()
-    else:
-        returns = np.log(table / table.shift(1))
-    returns = returns.dropna()
-    return returns
-
-
 @st.cache_data
 def compute_portfolio_returns_simple(merged_df):
     table = merged_df.set_index("date")
@@ -126,13 +116,10 @@ def compute_portfolio_returns_simple(merged_df):
 
 
 @st.cache_data
-def compute_rolling_returns(merged_df, window_periods, return_type):
-    """Rolling return for each ticker: (price[t]/price[t-window_periods])-1 (simple) or log ratio."""
+def compute_rolling_returns(merged_df, window_periods):
+    """Rolling simple return for each ticker: price[t]/price[t-window_periods] - 1."""
     price_df = merged_df.set_index("date")
-    if return_type == "logarithmic":
-        rolling = np.log(price_df) - np.log(price_df).shift(window_periods)
-    else:
-        rolling = price_df / price_df.shift(window_periods) - 1
+    rolling = price_df / price_df.shift(window_periods) - 1
     return rolling.reset_index()
 
 

@@ -67,13 +67,11 @@ Modular Streamlit dashboard split into 5 files inside `efficient_frontier_app/`.
 - **`efficient_frontier_app/descriptions.py`** — single source of truth for the per-section "How to read this section" expanders (concept → markdown with KaTeX formulas); rendered via `render_section_help`.
 (No legacy files currently on disk — the repo contains only the 5-file modular app.)
 
-### Critical Return Type Split
+### Simple returns everywhere (no return-type toggle)
 
-The code maintains two separate return series:
-- `returns` — user-selected type (`return_type` toggle: "simple" (default) or "logarithmic"). **Narrow scope: only the §3b rolling-returns chart and the §4 distribution stats (Min/Max/Mean/Std) + daily-returns plot honor it.** §2 does **not** use it (CAGR, annualised metrics, and max drawdown are always simple); §4's covariance/correlation matrices and per-asset Sortino are always simple too. Each toggle-sensitive section prints a caption stating which return type is in use and why log is offered there (statistical/distribution view). `render_per_etf_analytics` no longer takes `return_type`.
-- `portfolio_returns_simple` — always simple returns, used for **all portfolio optimization** (Monte Carlo, SciPy, VaR)
+**The app uses simple (arithmetic) returns throughout** — there is no log/simple toggle. This was a deliberate simplification for interpretability: every figure means "actual realised percentage change," and the dashboard never asks the user to reason about which return type a section is in. A single series, `portfolio_returns_simple` (= `merged_df` prices `.pct_change().dropna()`), backs §4's distribution stats/plot **and** all portfolio optimization (Monte Carlo, SciPy, VaR); §3b rolling returns are simple cumulative window returns.
 
-This split fixes the mathematical error where `sum(weights * log_returns)` incorrectly computes portfolio log returns (log returns aren't additive across assets).
+Using simple returns for portfolio math is also the *correct* choice, not just the simple one: `sum(weights * log_returns)` does not equal the portfolio log return (log returns aren't additive across assets), so optimization must use simple returns regardless. (Log returns have a textbook edge only for single-asset distribution-shape analysis, and at daily/monthly frequency they barely differ from simple — not worth a toggle here.)
 
 Key variables for optimization:
 - `portfolio_returns_simple` — simple returns dataframe
@@ -148,9 +146,8 @@ Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58)
 ### Key Functions
 
 **data_handling.py:**
-- `compute_returns(merged_df, return_type)` — return series (simple or logarithmic)
-- `compute_portfolio_returns_simple(merged_df)` — simple returns for portfolio optimization
-- `compute_rolling_returns(merged_df, window_periods, return_type)` — rolling returns over moving window
+- `compute_portfolio_returns_simple(merged_df)` — the single simple-returns series (`.pct_change().dropna()`) used by §4 stats and all optimization; also returns its mean and covariance
+- `compute_rolling_returns(merged_df, window_periods)` — rolling simple returns over a moving window
 - `build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date)` — inner join of asset prices
 - `check_price_spikes(tickers, folder_path, filename_suffix, filter_date)` — detects >60% price moves
 - **Total-return reconstruction:** `synthesize_total_return(price_index, etf, eurusd, periods_per_year)` — calibrate `q_hat` from the ETF overlap + return the spliced EUR series; `build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_year)` — shape it into the `date,adj close,synthetic,recon_yield` CSV frame; `run_total_return_reconstruction(jobs, intervals, output_dir, log_queue)` — threaded download+splice+save (mirrors `run_download`); `read_synthetic_info(...)` — per-ticker tag metadata for the §1 badge
@@ -166,7 +163,7 @@ Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58)
 - **§5 buy-and-hold helpers:** `buy_and_hold_value_series(merged_df, tickers, weights)` — drifting (un-rebalanced) value series, `V₀=1`; `underwater_episodes(value)` — list of peak/trough/recovery episodes; `deepest_drawdown_episode(value)` / `longest_underwater_episode(value)` (→ `(episode, days, ongoing)`); `downside_deviation_series(returns, N, rf)` — Sortino downside dev on a precomputed return series
 
 **ui_components.py:**
-- `render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type)` — renders 3b (individual assets only; no portfolio chart, no portfolio arg)
+- `render_rolling_returns(rolling_returns, tickers, rolling_window_years)` — renders 3b (individual assets only; no portfolio chart, no portfolio arg)
 - `render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers, my_portfolio_allocation, annualisation_factor, risk_free_rate, alpha, window_periods, rolling_window_years)` — renders §5 (buy-and-hold); `_fmt_period(days, ongoing)` helper formats underwater durations
 - `collect_portfolio_info()` — returns dict with max_dd and port_returns (CVaR is computed later from port_returns)
 - `display_portfolio_cards(portfolios, alpha)` — shows 6 metrics incl. Max Drawdown and CVaR at the user's confidence level (label updates with α)

@@ -15,7 +15,6 @@ from data_handling import (
     check_price_spikes,
     compute_data_availability,
     build_merged_dataframe,
-    compute_returns,
     compute_portfolio_returns_simple,
     compute_rolling_returns,
     run_download,
@@ -195,20 +194,6 @@ num_eff_portfolios = st.sidebar.number_input(
 risk_free_rate = st.sidebar.number_input(
     "Risk-free rate (€STR)", min_value=0.0, max_value=1.0, value=0.01932, step=0.001, format="%.5f"
 )
-return_type = st.sidebar.radio(
-    "Return type",
-    options=["simple", "logarithmic"],
-    index=0,
-    help=(
-        "Scope: affects ONLY the §3b rolling-returns chart and the §4 distribution "
-        "statistics (Min/Max/Mean/Std) and daily-returns plot. CAGR, annualised "
-        "return/volatility, max drawdown, and ALL portfolio optimization (efficient "
-        "frontier, VaR, portfolio cards) always use simple returns. Pick 'logarithmic' "
-        "for a more statistically well-behaved view of the return distribution; 'simple' "
-        "for actual realised percentage gains."
-    ),
-)
-
 rolling_window_years = st.sidebar.selectbox(
     "Rolling return window (years)",
     options=[1, 5, 10],
@@ -431,9 +416,8 @@ with st.spinner("Loading data and computing..."):
     synthetic_info = read_synthetic_info(tickers, folder_path, filename_suffix, filter_date_string)
     currency_info = read_currency_info(tickers, folder_path, filename_suffix)
     merged_df = build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date_string)
-    returns = compute_returns(merged_df, return_type)
     portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix = compute_portfolio_returns_simple(merged_df)
-    rolling_returns = compute_rolling_returns(merged_df, window_periods, return_type)
+    rolling_returns = compute_rolling_returns(merged_df, window_periods)
 
 if len(merged_df) < window_periods:
     st.warning(
@@ -448,9 +432,9 @@ if len(merged_df) < window_periods:
 render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info, currency_info)
 render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, annualisation_factor)
 render_etf_prices(merged_df, tickers)
-render_rolling_returns(rolling_returns, tickers, rolling_window_years, return_type)
-render_returns_statistics(returns, portfolio_returns_simple, portfolio_mean_returns,
-                           portfolio_cov_matrix, tickers, return_type, annualisation_factor,
+render_rolling_returns(rolling_returns, tickers, rolling_window_years)
+render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
+                           portfolio_cov_matrix, tickers, annualisation_factor,
                            risk_free_rate)
 render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                 my_portfolio_allocation, annualisation_factor, risk_free_rate,
