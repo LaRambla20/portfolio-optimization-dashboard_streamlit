@@ -18,7 +18,7 @@ python -m venv .venv
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
-**Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download ETF Data" panel.
+**Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download ETF Data" panel.
 
 ## Testing
 
@@ -34,13 +34,17 @@ For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python test_das
 
 Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all 9 section headers render plus portfolio card metrics. Screenshots are saved to `test_screenshots/` (gitignored).
 
-**Unit tests (no running app, no network needed):** `.venv\Scripts\python test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip). It also runs one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully if the network/SSL is unavailable.
+**Unit tests (no running app, no network needed):** `.venv\Scripts\python test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv\Scripts\python test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity).
+
+> **Adding a unit test:** plain assert-based script — `sys.path.insert(0, "efficient_frontier_app")`, functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv\Scripts\python test_X.py`.
 
 > **yfinance SSL gotcha:** yfinance uses `curl_cffi`, so the pip `--trusted-host` and git `schannel` workarounds do **not** apply to it. The app's `run_download`/`run_total_return_reconstruction` use a bare `yf.Ticker` (fine on the real machine). To drive yfinance for local validation on an SSL-intercepting machine, pass a relaxed session: `yf.Ticker(sym, session=curl_cffi.requests.Session(impersonate="chrome", verify=False))`.
 
 **Boot-check (fast path):** for sidebar-only / non-render changes, launch the app headless and grep the boot log for `error|traceback` instead of the full Playwright run — e.g. `streamlit run ... --server.headless true > boot.log 2>&1 &` then inspect `boot.log`.
 
 > **PowerShell boot-check caveat:** that bash redirection misleads on PowerShell — Streamlit's normal Uvicorn startup line surfaces in the log as a `NativeCommandError`/`RemoteException` (not a real error), `boot.log` is written UTF-16 (garbles grep), and a background run reports **exit 255** when force-killed (also not a failure). Treat **port 8501 LISTENING** as the success signal, not a clean log. Stop the app with `Get-Process streamlit | Stop-Process -Force` and confirm the port is freed.
+
+> **Clean PowerShell boot-check:** `Start-Process .venv\Scripts\streamlit.exe -ArgumentList 'run','efficient_frontier_app/efficient_frontier_app.py','--server.headless','true' -WindowStyle Hidden`, then poll `Get-NetTCPConnection -LocalPort 8501 -State Listen` in a short loop (a returned row = booted). Avoids the log-file garbling entirely.
 
 **Install Playwright** (already in venv; only needed once on a fresh clone):
 ```bash
@@ -168,6 +172,6 @@ Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58)
 
 **ui_components.py:**
 - `render_rolling_returns(rolling_returns, tickers, rolling_window_years)` — renders 3b (individual assets only; no portfolio chart, no portfolio arg)
-- `render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers, my_portfolio_allocation, annualisation_factor, risk_free_rate, alpha, window_periods, rolling_window_years)` — renders §5 (buy-and-hold); `_fmt_period(days, ongoing)` helper formats underwater durations
+- `render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers, my_portfolio_allocation, annualisation_factor, risk_free_rate, alpha, window_periods, rolling_window_years, rebalance_every_periods, rebalance_label)` — renders §5 at the selected rebalancing cadence (see **Rebalancing basis**); `_fmt_period(days, ongoing)` helper formats underwater durations
 - `collect_portfolio_info()` — returns dict with max_dd and port_returns (CVaR is computed later from port_returns)
 - `display_portfolio_cards(portfolios, alpha)` — shows 6 metrics incl. Max Drawdown and CVaR at the user's confidence level (label updates with α)
