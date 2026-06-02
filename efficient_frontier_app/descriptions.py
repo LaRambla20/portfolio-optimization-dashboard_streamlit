@@ -227,7 +227,7 @@ Rebasing to a common start makes relative performance instantly readable on one 
 **Rolling returns (per asset)**
 
 *How it's computed:* for every date, the return an investor would have earned over the preceding
-window of length $w$ (e.g. 1, 5 or 10 years):
+window of length $w$ (selectable: 1, 2, 3, 5, 7 or 10 years):
 
 $$R_t = \frac{P_t}{P_{t-w}} - 1$$
 

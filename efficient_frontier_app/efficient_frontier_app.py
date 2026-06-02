@@ -201,7 +201,7 @@ risk_free_rate = st.sidebar.number_input(
 )
 rolling_window_years = st.sidebar.selectbox(
     "Rolling return window (years)",
-    options=[1, 5, 10],
+    options=[1, 2, 3, 5, 7, 10],
     index=0,
     help="Window length for rolling return calculations",
 )

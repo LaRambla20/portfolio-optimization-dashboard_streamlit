@@ -9,7 +9,7 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
 - **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
 - **Simple returns throughout** — one consistent return definition (actual realised % change) across every section and all optimization, so there's no return-type toggle to reason about
-- **Rolling returns** — 1/5/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
+- **Rolling returns** — 1/2/3/5/7/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
 - **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
