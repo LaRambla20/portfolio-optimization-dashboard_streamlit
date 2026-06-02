@@ -13,6 +13,7 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
 - **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
+- **Data-quality checks** — section 1 reports any **recorded stock splits** (read straight from yfinance's `stock splits` column — informational, since Adj Close is already split-adjusted) and flags **statistically anomalous price moves** with a robust, self-calibrating outlier test that adapts per asset and per interval (so genuine crypto swings aren't false-flagged)
 - **Currency safety** — section 1 warns if any loaded series isn't in EUR (the app otherwise assumes a single base currency)
 - **Flexible inputs** — configurable portfolio weights, confidence level, date filter
 
@@ -84,7 +85,7 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 
 | # | Section | Description |
 |---|---------|-------------|
-| 1 | Load ETF Data | Spike detection, data availability gauge, non-EUR currency warning, reconstructed-history flag |
+| 1 | Load ETF Data | Recorded stock-split report, price-anomaly detection, data availability gauge, non-EUR currency warning, reconstructed-history flag |
 | 2 | Per-ETF Analytics | CAGR, returns, drawdown per asset |
 | 3 | ETF Prices | Raw and normalized price charts |
 | 3b | Rolling Returns | Moving-window returns for individual assets |
@@ -93,3 +94,22 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | 6 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) |
 | 7 | SciPy EF | Optimized efficient frontier via SLSQP |
 | 8 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics |
+
+## Data-quality checks (section 1)
+
+Section 1 runs two **independent** checks on the raw prices, because a stock split and a bad price are different things:
+
+**Recorded stock splits (📐).** Read directly from yfinance's `stock splits` column — the exact split ratio (e.g. `2.0` = 2-for-1, `0.1` = 1-for-10 reverse) on the exact ex-date, identical across daily/weekly/monthly because it's recorded data, not inferred from a price jump. Since the app analyses **Adj Close**, which yfinance has *already split-adjusted*, a split produces **no jump** in the series and is purely informational. Files without the column (legacy downloads, `_EXT` reconstructions) are simply skipped.
+
+**Price-anomaly check (⚠️).** A fixed "flag any move > 60%" rule can't serve every asset and interval at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swings further in a month than an equity ETF does in a year. Instead, each step-to-step return is standardised against the asset's *own* history using a fat-tail-resistant robust z-score:
+
+```
+z = (r − median(r)) / (1.4826 · MAD(r))
+```
+
+where `MAD` is the median absolute deviation. A move is flagged only when `|z| > 8` **and** the move exceeds a 45% floor. The floor sits above the largest genuine single-bar swings (even crypto rarely moves more than ~40% in a day), since real glitches and unadjusted splits move price by roughly half or double. Because the scale adapts per asset and per interval, normal high-volatility swings pass while a fat-finger tick, a currency mix-up, or an unadjusted split stands out.
+
+Each flagged move is cross-referenced against the recorded split dates, shown in the **"On split date?"** column:
+
+- **`yes`** — the anomalous move lands on a recorded split ex-date, so it's almost certainly just a split not reflected in this particular series (harmless).
+- **`—`** — the move doesn't coincide with any split; this is the one to investigate as a possible data glitch.

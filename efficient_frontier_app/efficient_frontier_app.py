@@ -12,7 +12,8 @@ import threading
 import os
 
 from data_handling import (
-    check_price_spikes,
+    check_price_anomalies,
+    detect_stock_splits,
     compute_data_availability,
     build_merged_dataframe,
     compute_portfolio_returns_simple,
@@ -411,7 +412,8 @@ if missing_files:
 # ─────────────────────────────────────────────────────────
 
 with st.spinner("Loading data and computing..."):
-    spike_warnings = check_price_spikes(tickers, folder_path, filename_suffix, filter_date_string)
+    split_events = detect_stock_splits(tickers, folder_path, filename_suffix, filter_date_string)
+    anomaly_warnings = check_price_anomalies(tickers, folder_path, filename_suffix, filter_date_string)
     data_availability = compute_data_availability(tickers, folder_path, filename_suffix, filter_date_string)
     synthetic_info = read_synthetic_info(tickers, folder_path, filename_suffix, filter_date_string)
     currency_info = read_currency_info(tickers, folder_path, filename_suffix)
@@ -429,7 +431,7 @@ if len(merged_df) < window_periods:
 # RENDER SECTIONS
 # ─────────────────────────────────────────────────────────
 
-render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info, currency_info)
+render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability, synthetic_info, currency_info)
 render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string, annualisation_factor)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years)

@@ -35,22 +35,100 @@ def evaluate_return_metrics(returns, start_date, end_date):
 
 
 @st.cache_data
-def check_price_spikes(tickers, folder_path, filename_suffix, filter_date_string, spike_threshold=0.60):
-    spike_warnings = {}
+def detect_stock_splits(tickers, folder_path, filename_suffix, filter_date_string):
+    """Ground-truth stock splits, read from yfinance's ``stock splits`` column.
+
+    A non-zero entry there is a split yfinance *recorded* on that ex-date, with the
+    exact ratio (e.g. ``2.0`` = 2-for-1, ``0.1`` = 1-for-10 reverse) — interval- and
+    asset-agnostic because it is recorded data, not inferred from a price jump. Note
+    that ``adj close`` is already split-adjusted, so these splits do **not** create a
+    jump in the series the app analyses; they are reported as *informational*.
+
+    Returns ``{ticker: [(date_str, ratio), ...]}`` only for tickers whose CSV carries
+    a ``stock splits`` column with at least one split inside the filter window. Files
+    without the column (legacy downloads, ``_EXT`` reconstructions) are omitted.
+    """
+    splits = {}
     for ticker in tickers:
         fp = os.path.join(folder_path, ticker + filename_suffix)
+        if not os.path.exists(fp):
+            continue
+        header = pd.read_csv(fp, nrows=0)
+        if "stock splits" not in header.columns:
+            continue
+        df = pd.read_csv(fp, usecols=["date", "stock splits"])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df[df["date"] <= filter_date_string]
+        ratios = pd.to_numeric(df["stock splits"], errors="coerce").fillna(0.0)
+        hits = df[ratios != 0.0]
+        if not hits.empty:
+            splits[ticker] = [
+                (row["date"].strftime("%Y-%m-%d"), float(ratios.loc[idx]))
+                for idx, row in hits.iterrows()
+            ]
+    return splits
+
+
+@st.cache_data
+def check_price_anomalies(tickers, folder_path, filename_suffix, filter_date_string,
+                          z_threshold=8.0, min_abs_move=0.45):
+    """Flag step-to-step moves that are extreme *relative to the series' own history*.
+
+    Replaces a fixed 60% threshold, which can't serve every asset × interval at once
+    (a monthly bar compounds ~21 daily moves, and BTC swings far more than an equity
+    ETF — so 60% is routine for crypto monthly yet near-impossible for an equity daily).
+
+    We use a robust z-score on the simple returns ``r_t``: centre on the median and
+    scale by ``1.4826·MAD`` (≈ a fat-tail-resistant σ), then flag bars where
+    ``|z| > z_threshold`` **and** ``|r_t| > min_abs_move``. The MAD scale auto-adapts
+    per asset and per interval, so BTC's genuine ±65% months pass while a data glitch
+    (a fat-finger tick, a currency mix-up, or a split that wasn't adjusted in this
+    series) stands out. The absolute floor stops a tiny but statistically-extreme wobble
+    in an ultra-calm series from tripping the flag.
+
+    Each hit is cross-referenced against :func:`detect_stock_splits`: ``matches_split``
+    marks a flagged move that lands on a recorded split ex-date (→ very likely just an
+    unadjusted split, harmless). Returns
+    ``{ticker: [(date_str, prev_price, new_price, pct, z, matches_split), ...]}``.
+    """
+    split_dates = {
+        t: {d for d, _ in events}
+        for t, events in detect_stock_splits(
+            tickers, folder_path, filename_suffix, filter_date_string).items()
+    }
+    anomalies = {}
+    for ticker in tickers:
+        fp = os.path.join(folder_path, ticker + filename_suffix)
+        if not os.path.exists(fp):
+            continue
         df = pd.read_csv(fp, usecols=["date", "adj close"])
         df["date"] = pd.to_datetime(df["date"])
         df = df[df["date"] <= filter_date_string].sort_values("date").reset_index(drop=True)
-        df["_pct"] = df["adj close"].pct_change()
-        hits = df[df["_pct"].abs() > spike_threshold].dropna(subset=["_pct"])
-        if not hits.empty:
-            spike_warnings[ticker] = [
-                (row["date"].strftime("%Y-%m-%d"), df.loc[idx - 1, "adj close"], row["adj close"], row["_pct"])
-                for idx, row in hits.iterrows()
-                if idx > 0
-            ]
-    return spike_warnings
+        r = df["adj close"].pct_change()
+        rv = r.dropna()
+        if len(rv) < 10:  # too few points for a stable median/MAD
+            continue
+        med = rv.median()
+        mad = (rv - med).abs().median()
+        robust_sigma = 1.4826 * mad
+        if robust_sigma <= 0:  # degenerate (mostly identical prices) → fall back to std
+            robust_sigma = rv.std()
+        if not robust_sigma or robust_sigma <= 0:
+            continue
+        z = (r - med) / robust_sigma
+        ticker_splits = split_dates.get(ticker, set())
+        hits = []
+        for idx in range(1, len(df)):
+            rr = r.iloc[idx]
+            if pd.isna(rr):
+                continue
+            if abs(z.iloc[idx]) > z_threshold and abs(rr) > min_abs_move:
+                dstr = df.loc[idx, "date"].strftime("%Y-%m-%d")
+                hits.append((dstr, df.loc[idx - 1, "adj close"], df.loc[idx, "adj close"],
+                             float(rr), float(z.iloc[idx]), dstr in ticker_splits))
+        if hits:
+            anomalies[ticker] = hits
+    return anomalies
 
 
 @st.cache_data

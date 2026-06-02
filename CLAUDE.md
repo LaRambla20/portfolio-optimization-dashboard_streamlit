@@ -62,7 +62,7 @@ git -c http.sslBackend=schannel push
 Modular Streamlit dashboard split into 5 files inside `efficient_frontier_app/`.
 - **`efficient_frontier_app/efficient_frontier_app.py`** — main entry point: sidebar inputs, derived parameters, orchestrates data loading and UI rendering.
 - **`efficient_frontier_app/portfolio_calculations.py`** — pure math: portfolio performance, optimization (SciPy), Monte Carlo simulation, VaR calculations.
-- **`efficient_frontier_app/data_handling.py`** — data operations: CSV loading, validation, price spike checks, merged dataframe building, return computations. Uses `@st.cache_data`.
+- **`efficient_frontier_app/data_handling.py`** — data operations: CSV loading, validation, stock-split detection + price-anomaly checks, merged dataframe building, return computations. Uses `@st.cache_data`.
 - **`efficient_frontier_app/ui_components.py`** — UI renderers: 9 section functions (`render_load_etf_data`, `render_per_etf_analytics`, `render_etf_prices`, `render_rolling_returns`, `render_returns_statistics`, `render_input_portfolio_analysis`, `render_monte_carlo`, `render_scipy_ef`, `render_var_analysis`) plus shared helpers (`collect_portfolio_info`, `display_portfolio_cards`). All data passed as explicit parameters (C-like style).
 - **`efficient_frontier_app/descriptions.py`** — single source of truth for the per-section "How to read this section" expanders (concept → markdown with KaTeX formulas); rendered via `render_section_help`.
 (No legacy files currently on disk — the repo contains only the 5-file modular app.)
@@ -82,7 +82,7 @@ Key variables for optimization:
 
 ### Section Structure
 
-1. **Load ETF Data** — validates CSVs, checks price spikes, shows data availability gauge, a 💱 warning if any series isn't EUR, and (for `{ETF}_EXT` files) a 🧬 caption flagging reconstructed total-return rows
+1. **Load ETF Data** — validates CSVs, reports recorded stock splits (📐, from the `stock splits` column — informational, since Adj Close is already split-adjusted) and flags statistically anomalous price moves (⚠️, robust MAD z-score), shows data availability gauge, a 💱 warning if any series isn't EUR, and (for `{ETF}_EXT` files) a 🧬 caption flagging reconstructed total-return rows
 2. **Per-ETF Analytics** — CAGR, simple/calendar-year returns, "Annualised Metrics by Look-back Period", **Max Drawdown** (always simple returns for consistency)
 3. **ETF Prices** — raw and normalized (base = 1000) price charts (merged df is built upstream via inner join)
 3b. **Rolling Returns** — moving-window returns (1/5/10 years) for **individual assets only** (the portfolio rolling-returns chart now lives in §5)
@@ -149,7 +149,7 @@ Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58)
 - `compute_portfolio_returns_simple(merged_df)` — the single simple-returns series (`.pct_change().dropna()`) used by §4 stats and all optimization; also returns its mean and covariance
 - `compute_rolling_returns(merged_df, window_periods)` — rolling simple returns over a moving window
 - `build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date)` — inner join of asset prices
-- `check_price_spikes(tickers, folder_path, filename_suffix, filter_date)` — detects >60% price moves
+- `detect_stock_splits(tickers, folder_path, filename_suffix, filter_date)` — ground-truth splits from the yfinance `stock splits` column (date + ratio); skips files without the column. `check_price_anomalies(tickers, folder_path, filename_suffix, filter_date, z_threshold=8.0, min_abs_move=0.45)` — flags moves that are robust-MAD-z-score outliers *and* exceed a 45% floor (so genuine crypto swings and interval scaling don't false-trigger), cross-referenced against split dates. **Note: Adj Close is already split-adjusted, so a real split is *not* a price jump — splits come from the column, the anomaly check catches glitches / unadjusted splits.**
 - **Total-return reconstruction:** `synthesize_total_return(price_index, etf, eurusd, periods_per_year)` — calibrate `q_hat` from the ETF overlap + return the spliced EUR series; `build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_year)` — shape it into the `date,adj close,synthetic,recon_yield` CSV frame; `run_total_return_reconstruction(jobs, intervals, output_dir, log_queue)` — threaded download+splice+save (mirrors `run_download`); `read_synthetic_info(...)` — per-ticker tag metadata for the §1 badge
 - **Currency:** `run_download(..., convert_to_eur=True)` — downloads, auto FX-converts non-EUR to EUR (unless overridden), writes a `currency` column; `detect_currency(symbol, yf)` / `fetch_eur_multiplier(currency, yf_interval, end_date, yf)` / `apply_eur_conversion(data, eur_multiplier)` — the conversion helpers (last one is pure, unit-tested); `read_currency_info(tickers, folder_path, filename_suffix)` — resolves each ticker's currency (stored column, else cached network sniff) for the §1 check
 

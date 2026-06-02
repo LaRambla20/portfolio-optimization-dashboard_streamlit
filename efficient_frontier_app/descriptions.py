@@ -21,18 +21,32 @@ DESCRIPTIONS = {
 
     # ── §1 — Load ETF Data ───────────────────────────────────────────────────
     "price_spikes": r"""
-**Price-spike check**
+**Stock splits & price-anomaly check**
 
-*How it's computed:* we look at each step-to-step price change and flag any bigger than 60%:
+This is two checks, because a *stock split* and a *bad price* are different things.
 
-$$\left|\frac{P_t}{P_{t-1}} - 1\right| > 0.60$$
+*Recorded stock splits (📐):* read straight from yfinance's `stock splits` column — the
+exact ratio on the exact ex-date, identical across daily/weekly/monthly. Since the prices
+here are **Adj Close**, which is already split-adjusted, a split creates *no jump* in the
+series and is purely informational.
 
-*What it means for you:* a single-day move that large is usually a stock split, a data
-glitch, or a genuinely violent move — not normal behaviour. Flagging it lets you check the
-data before trusting the numbers built on top of it.
+*Anomaly check (⚠️):* a fixed "flag moves > 60%" rule can't serve every asset and interval
+at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swings further in
+a month than an equity ETF does in a year. Instead we standardise each return against the
+asset's *own* history using a fat-tail-resistant scale, and flag only the genuine outliers:
+
+$$z_t=\frac{r_t-\mathrm{median}(r)}{1.4826\cdot\mathrm{MAD}(r)},\qquad
+\left|z_t\right| > 8 \;\text{ and }\; \left|r_t\right| > 45\%$$
+
+where $\mathrm{MAD}$ is the median absolute deviation. The absolute floor is set above the
+largest genuine single-bar swings (even crypto rarely moves more than ~40% in a day),
+since real glitches and unadjusted splits move price by roughly half or double. Because the
+$z$ scale adapts per asset and per interval, normal high-volatility swings pass, while a
+fat-finger tick, a currency mix-up, or an unadjusted split stands out. A flagged move that
+lands on a recorded split date is almost certainly just that split.
 
 *Why it's useful:* one bad price can quietly distort every return, volatility and risk
-figure downstream. This is a cheap sanity check on the raw inputs.
+figure downstream. This is a cheap, self-calibrating sanity check on the raw inputs.
 """,
 
     "data_window": r"""

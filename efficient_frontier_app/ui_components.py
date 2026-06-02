@@ -133,34 +133,56 @@ def display_portfolio_cards(portfolios, alpha):
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 1 — LOAD ETF DATA (spike warnings + data availability)
+# SECTION 1 — LOAD ETF DATA (split detection + anomaly warnings + data availability)
 # ─────────────────────────────────────────────────────────────────
 
-def render_load_etf_data(tickers, spike_warnings, data_availability, synthetic_info=None,
-                         currency_info=None):
+def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability,
+                         synthetic_info=None, currency_info=None):
     st.header("1. Load ETF Data")
     render_section_help(
-        "This section loads your price data and checks it is usable — flagging suspicious "
-        "jumps and showing how much history all your assets share.",
+        "This section loads your price data and checks it is usable — identifying recorded "
+        "stock splits, flagging statistically anomalous jumps, and showing how much history "
+        "all your assets share.",
         ["price_spikes", "data_window"],
     )
 
-    if spike_warnings:
-        tickers_flagged = ", ".join(f"**{t}**" for t in spike_warnings)
-        st.warning(f" Large price moves (> 60%) detected in: {tickers_flagged}")
-        with st.expander("Show details", expanded=False):
-            for ticker, events in spike_warnings.items():
+    # Recorded stock splits (ground truth from yfinance's 'stock splits' column).
+    # Adj Close is already split-adjusted, so these are informational, not problems.
+    if split_events:
+        tickers_split = ", ".join(f"**{t}**" for t in split_events)
+        st.info(f"📐 Recorded stock splits found in: {tickers_split} "
+                "(already reflected in Adj Close — informational)")
+        with st.expander("Show splits", expanded=False):
+            for ticker, events in split_events.items():
                 st.markdown(f"**{ticker}**")
                 rows = [
-                    {"Date": d, "Prev. Price": f"{prev:.4f}",
-                     "New Price": f"{new:.4f}", "Change": f"{pct:+.1%}"}
-                    for d, prev, new, pct in events
+                    {"Date": d, "Split ratio": f"{ratio:g}-for-1" if ratio >= 1
+                     else f"1-for-{(1 / ratio):g} (reverse)"}
+                    for d, ratio in events
+                ]
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    # Statistically anomalous moves (robust MAD z-score), i.e. likely data glitches —
+    # or a split not reflected in this series.
+    if anomaly_warnings:
+        tickers_flagged = ", ".join(f"**{t}**" for t in anomaly_warnings)
+        st.warning(f"⚠️ Statistically anomalous price moves detected in: {tickers_flagged}")
+        with st.expander("Show details", expanded=False):
+            for ticker, events in anomaly_warnings.items():
+                st.markdown(f"**{ticker}**")
+                rows = [
+                    {"Date": d, "Prev. Price": f"{prev:.4f}", "New Price": f"{new:.4f}",
+                     "Change": f"{pct:+.1%}", "Robust z": f"{z:+.1f}",
+                     "On split date?": "yes" if on_split else "—"}
+                    for d, prev, new, pct, z, on_split in events
                 ]
                 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             st.caption(
-                "These events may be stock splits, data errors, or genuine extreme moves. "
-                "If they are splits already reflected in the Adj Close column they are harmless; "
-                "otherwise consider cleaning the data before running the analysis."
+                "These moves are extreme relative to each asset's own return history "
+                "(|robust z| > 8), so normal high-volatility swings (e.g. crypto) are not "
+                "flagged. A move marked **On split date? = yes** is almost certainly just a "
+                "split not yet reflected in this series; otherwise check for a data glitch "
+                "(bad tick, currency mix-up) before trusting the numbers built on top of it."
             )
 
     common_start = data_availability["common_start"]
