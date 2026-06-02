@@ -4,16 +4,17 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 
 ## Features
 
-- **Input portfolio analysis** — your allocation as a **buy-and-hold** (un-rebalanced) portfolio: allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, plus headline return/risk metrics
+- **Input portfolio analysis** — your allocation as a **buy-and-hold** (un-rebalanced) portfolio: allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, plus headline return/risk metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown, historical VaR/CVaR)
 - **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP)
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
 - **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
+- **Simple returns throughout** — one consistent return definition (actual realised % change) across every section and all optimization, so there's no return-type toggle to reason about
 - **Rolling returns** — 1/5/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
 - **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
 - **Currency safety** — section 1 warns if any loaded series isn't in EUR (the app otherwise assumes a single base currency)
-- **Flexible inputs** — configurable portfolio weights, return type, confidence level, date filter
+- **Flexible inputs** — configurable portfolio weights, confidence level, date filter
 
 ## Setup
 
@@ -28,7 +29,7 @@ python -m venv .venv
 
 ## Usage
 
-1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
+1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, DBMF, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
 
 2. **Add or refresh tickers** — expand the "Download ETF Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** to store raw prices instead.
 
@@ -88,7 +89,7 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | 3 | ETF Prices | Raw and normalized price charts |
 | 3b | Rolling Returns | Moving-window returns for individual assets |
 | 4 | Returns & Statistics | Covariance/correlation matrices, return distributions |
-| 5 | Input Portfolio Analysis | Your allocation as a buy-and-hold portfolio: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline metrics, historical VaR/CVaR, correlation heatmap |
+| 5 | Input Portfolio Analysis | Your allocation as a buy-and-hold portfolio: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), historical VaR/CVaR, correlation heatmap |
 | 6 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) |
 | 7 | SciPy EF | Optimized efficient frontier via SLSQP |
 | 8 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics |
