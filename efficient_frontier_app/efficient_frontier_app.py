@@ -205,6 +205,14 @@ rolling_window_years = st.sidebar.selectbox(
     index=0,
     help="Window length for rolling return calculations",
 )
+rebalancing_frequency = st.sidebar.selectbox(
+    "Rebalancing frequency",
+    options=["Never", "Every 6 months", "Yearly", "Every period"],
+    index=0,
+    help="How often your portfolio is reset to its target weights. Governs §5 (Input Portfolio) "
+         "and §8 (VaR) only — the §6/§7 efficient frontier always assumes per-period rebalancing, "
+         "the basis MPT optimization requires. 'Never' = buy-and-hold (weights drift).",
+)
 
 alpha = st.sidebar.slider(
     "VaR confidence level (α)", min_value=0.80, max_value=0.99, value=0.95, step=0.01
@@ -264,6 +272,21 @@ elif data_period == "monthly":
     filename_suffix = "_data_monthly.csv"
 
 window_periods = rolling_window_years * annualisation_factor
+
+# Rebalancing cadence (count-based: reset weights every K rows). K is derived from the data
+# frequency so the calendar meaning is constant across daily/weekly/monthly data.
+if rebalancing_frequency == "Every period":
+    rebalance_every_periods = 1
+    rebalance_label = "rebalanced every period"
+elif rebalancing_frequency == "Every 6 months":
+    rebalance_every_periods = max(1, round(annualisation_factor / 2))
+    rebalance_label = "rebalanced every 6 months"
+elif rebalancing_frequency == "Yearly":
+    rebalance_every_periods = annualisation_factor
+    rebalance_label = "rebalanced yearly"
+else:  # "Never"
+    rebalance_every_periods = None
+    rebalance_label = "never rebalanced (buy-and-hold)"
 
 tickers = list(raw_portfolio.keys())
 total_invested = sum(raw_portfolio.values())
@@ -444,7 +467,8 @@ render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                            risk_free_rate)
 render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                 my_portfolio_allocation, annualisation_factor, risk_free_rate,
-                                alpha, window_periods, rolling_window_years)
+                                alpha, window_periods, rolling_window_years,
+                                rebalance_every_periods, rebalance_label)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                     custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha)
@@ -452,4 +476,5 @@ render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_
                   tickers, annualisation_factor, risk_free_rate, num_portfolios,
                   num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                   my_portfolio_allocation, alpha)
-render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation)
+render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation,
+                    merged_df, tickers, rebalance_every_periods, rebalance_label)

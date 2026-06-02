@@ -215,24 +215,62 @@ def portfolio_info_dict(name, std_dev, ret, sharpe, alloc_df, var=None):
     return d, alloc_df
 
 # ─────────────────────────────────────────────────────────────────
-# BUY-AND-HOLD PORTFOLIO (Input Portfolio Analysis, §5)
+# REBALANCED PORTFOLIO VALUE SERIES (Input Portfolio Analysis §5, VaR §8)
 # ─────────────────────────────────────────────────────────────────
-# Unlike the optimization sections (which rebalance to fixed weights every period via
-# returns.dot(weights)), §5 models a portfolio set up once and left untouched: each asset is
-# bought at its first price and held, so the mix drifts with prices. All §5 figures derive from
-# this single value series, so it is intentionally inconsistent with the rebalanced cards/frontier.
+# A single value series for a portfolio held at target weights and periodically rebalanced. The
+# two optimization sections (§6/§7) instead use the closed-form per-period-rebalanced MPT basis
+# (mean/cov), which is *not* this series — so the same portfolio's realised return/risk/drawdown
+# can legitimately differ between §5/§8 and §6/§7. The cadence is chosen in the sidebar.
 
-def buy_and_hold_value_series(merged_df, tickers, weights):
-    """Normalized buy-and-hold portfolio value, starting at 1.0.
+def rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods=None):
+    """Normalized portfolio value (V_0 = 1) under periodic rebalancing to target `weights`.
 
-    Each asset is rebased to its first price (units = w_i / P_i0), then the value is the sum of
-    holdings as prices drift: V_t = sum_i w_i * P_it / P_i0. Scale-invariant, so only the weight
-    proportions matter — not the absolute euros invested. Returns a pd.Series indexed by date.
+    The portfolio is bought at `weights` and held; the mix drifts with prices, and every
+    `rebalance_every_periods` rows it is reset back to the target weights. Between resets it is a
+    buy-and-hold of the holdings set at the last reset:
+
+        V_t = V_r * sum_i w_i * P_it / P_ir   (r = most recent reset row, V_r carried forward)
+
+    so the series is continuous across resets (no spurious flat period). Scale-invariant — only
+    the weight proportions matter. Returns a pd.Series indexed by date.
+
+    Special cases (used to reproduce the app's two historical bases exactly):
+      * rebalance_every_periods=None (or >= len) → never reset → buy-and-hold,
+        V_t = sum_i w_i * P_it / P_i0.
+      * rebalance_every_periods=1 → reset every period → V_t = prod_s (1 + sum_i w_i r_is),
+        i.e. (1 + returns.dot(weights)).cumprod() — the constant-weight rebalanced series.
     """
     prices = merged_df.set_index("date")[list(tickers)]
-    norm = prices / prices.iloc[0]
-    value = norm.mul(np.asarray(weights, dtype=np.float64), axis=1).sum(axis=1)
+    w = np.asarray(weights, dtype=np.float64)
+    pv = prices.to_numpy(dtype=np.float64)
+    n = len(prices)
+    value = pd.Series(index=prices.index, dtype=np.float64)
+    if n == 0:
+        return value
+    value.iloc[0] = 1.0
+    if rebalance_every_periods is None or rebalance_every_periods < 1:
+        resets = [0]
+    else:
+        resets = list(range(0, n, int(rebalance_every_periods)))
+    # Each reset row r seeds a buy-and-hold segment (ref prices = P_ir, carried value V_r) running
+    # up to and including the next reset row, which the following segment then re-seeds from.
+    for si, r in enumerate(resets):
+        r_next = resets[si + 1] if si + 1 < len(resets) else n - 1
+        if r_next <= r:
+            continue
+        carry = value.iloc[r]                      # set by the previous segment (or 1.0 at r=0)
+        seg = pv[r + 1:r_next + 1] / pv[r]         # (m, A) price ratios vs the reset reference
+        value.iloc[r + 1:r_next + 1] = carry * seg.dot(w)
     return value
+
+
+def buy_and_hold_value_series(merged_df, tickers, weights):
+    """Buy-and-hold (never-rebalanced) value series — thin wrapper over `rebalanced_value_series`.
+
+    Each asset is bought at its first price and held, so the mix drifts with prices:
+    V_t = sum_i w_i * P_it / P_i0, V_0 = 1.
+    """
+    return rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods=None)
 
 
 def underwater_episodes(value):

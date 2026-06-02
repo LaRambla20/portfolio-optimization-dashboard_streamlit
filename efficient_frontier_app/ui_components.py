@@ -28,6 +28,7 @@ from portfolio_calculations import (
     cvar,
     max_drawdown,
     buy_and_hold_value_series,
+    rebalanced_value_series,
     underwater_episodes,
     deepest_drawdown_episode,
     longest_underwater_episode,
@@ -93,7 +94,8 @@ def display_portfolio_cards(portfolios, alpha):
                 "Max Drawdown",
                 f"{p.get('max_dd', 0):.2%}",
                 help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
-                     "not annualised. Assumes constant weights (daily rebalancing), not buy-and-hold.",
+                     "not annualised. Assumes constant weights (per-period rebalancing), not buy-and-hold. "
+                     "For a less-frequent cadence see §5/§8.",
             )
             # CVaR computed once here, at the user's chosen confidence level, from the portfolio's
             # own return series (single CVaR definition / sign across the whole app: positive = loss).
@@ -105,7 +107,7 @@ def display_portfolio_cards(portfolios, alpha):
                 help="Expected shortfall: the average loss on the worst (1−confidence) slice of "
                      "individual periods (e.g. days). A per-period figure — not annualised — so it "
                      "sits on a shorter horizon than the annual return and volatility above. "
-                     "Computed on a constant-weight (daily-rebalanced) portfolio.",
+                     "Computed on a constant-weight (per-period-rebalanced) portfolio.",
             )
             if p.get("var") is not None:
                 st.metric(
@@ -616,12 +618,14 @@ def _fmt_period(days, ongoing):
 
 def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                     my_portfolio_allocation, annualisation_factor,
-                                    risk_free_rate, alpha, window_periods, rolling_window_years):
+                                    risk_free_rate, alpha, window_periods, rolling_window_years,
+                                    rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)"):
     st.header("5. Input Portfolio Analysis")
+    st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar).")
     render_section_help(
-        "This section analyses your actual allocation as a buy-and-hold portfolio — set once and "
-        "never rebalanced — covering its growth, its worst falls and recovery times, and its tail risk.",
-        ["buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
+        "This section analyses your actual allocation, held at the rebalancing cadence you chose in "
+        "the sidebar, covering its growth, its worst falls and recovery times, and its tail risk.",
+        ["rebalancing", "buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
          "max_drawdown", "cagr", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
          "var_historical", "cvar", "rolling_returns_portfolio", "correlation"],
     )
@@ -649,8 +653,8 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         st.dataframe(alloc_df, width="stretch")
         st.caption("Weights are normalised from the market values you entered in the sidebar.")
 
-    # ── Buy-and-hold value series (the single basis for every figure below) ──────────────
-    value = buy_and_hold_value_series(merged_df, tickers, weights)
+    # ── Rebalanced value series (the single basis for every figure below) ────────────────
+    value = rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods)
     bh_ret = value.pct_change().dropna()
     if len(bh_ret) < 2:
         st.warning("Not enough overlapping history to analyse the portfolio.")
@@ -679,9 +683,10 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     hist_cvar_loss = cvar(bh_ret, tail)
 
     st.info(
-        "📌 Buy-and-hold basis: this section invests at your weights once and never rebalances, so "
-        "the mix drifts with prices. Figures here differ from the rebalanced 'My Portfolio' card on "
-        "the efficient frontier (§6/§7) and the VaR in §8."
+        f"📌 This section holds your weights **{rebalance_label}**; between rebalances the mix drifts "
+        "with prices. §8 (VaR) uses the *same* cadence. The §6/§7 efficient-frontier cards instead "
+        "assume per-period rebalancing (the MPT basis), so the *same* portfolio's return, risk and "
+        "drawdown can legitimately differ there — unless you set the cadence to 'Every period'."
     )
 
     # ── Headline metrics ────────────────────────────────────────────────────────────────
@@ -850,6 +855,9 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                         custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha):
     st.header("6. Monte Carlo Efficient Frontier (Volatility)")
+    st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
+               "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
+               "sidebar Rebalancing-frequency setting (which governs §5 and §8).")
     render_section_help(
         "This section randomly simulates thousands of portfolios to map the trade-off between "
         "risk and return, and highlights a few notable ones.",
@@ -1012,6 +1020,9 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                      my_portfolio_allocation, alpha):
     st.header("7. Scipy Efficient Frontier (Volatility)")
+    st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
+               "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
+               "sidebar Rebalancing-frequency setting (which governs §5 and §8).")
     render_section_help(
         "This section mathematically solves for the best portfolios — rather than guessing "
         "randomly — and draws the efficient frontier: the best return achievable at each level of risk.",
@@ -1181,8 +1192,12 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
 # SECTION 8 — VAR ANALYSIS
 # ─────────────────────────────────────────────────────────────────
 
-def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation):
+def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation,
+                        merged_df, tickers, rebalance_every_periods=None,
+                        rebalance_label="never rebalanced (buy-and-hold)"):
     st.header("8. Value at Risk (VaR) Analysis")
+    st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar). Returns below are still "
+               "per-period — the distribution of single-period returns of a portfolio held at this cadence.")
     render_section_help(
         "This section estimates how much you could lose on a bad day or in a bad tail of "
         "outcomes, using Value at Risk and its sibling CVaR.",
@@ -1192,7 +1207,11 @@ def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation
     z_score = stats.norm.ppf(1 - alpha)
     tail = 1 - alpha  # tail probability (e.g. 0.05 for 95% confidence)
     my_portfolio_weights = np.array(list(my_portfolio_allocation.values()), dtype=np.float64)
-    my_portfolio_returns = portfolio_returns_simple.dot(my_portfolio_weights)
+    # Per-period returns of the portfolio held at the chosen rebalancing cadence (matches §5).
+    # With 'Every period' this equals portfolio_returns_simple.dot(weights); 'Never' = buy-and-hold.
+    my_portfolio_returns = rebalanced_value_series(
+        merged_df, tickers, my_portfolio_weights, rebalance_every_periods
+    ).pct_change().dropna()
     mu_var = my_portfolio_returns.mean()
     sigma_var = my_portfolio_returns.std()
 

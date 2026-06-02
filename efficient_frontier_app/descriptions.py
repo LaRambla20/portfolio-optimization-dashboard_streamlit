@@ -324,18 +324,27 @@ either alone.
 """,
 
     # ── §5 — Input Portfolio Analysis ────────────────────────────────────────
+    "rebalancing": r"""
+**Rebalancing frequency**
+
+*What it is:* how often your portfolio is reset back to its target weights. Pick it in the sidebar — **Never** (buy-and-hold), **Every 6 months**, **Yearly**, or **Every period**. Between resets the mix drifts: winners grow into a larger share and losers shrink.
+
+*Where it applies:* this section and the VaR section (§8) follow your choice. The efficient-frontier sections (§6 Monte Carlo, §7 Scipy) always assume *per-period* rebalancing — the closed-form Modern Portfolio Theory math (annualised mean and $\sqrt{w^\top \Sigma w}$ volatility) only holds when the portfolio return is $\sum_i w_i r_i$ every period, which *is* per-period rebalancing. Rebalance less often and that identity breaks, so the frontier can't be re-derived for it.
+
+*What it means for you:* less-frequent rebalancing lets the portfolio drift, usually raising its volatility and tail risk versus the per-period ideal. Comparing cadences here shows how much the rebalancing discipline actually matters for *your* allocation.
+""",
     "buy_and_hold": r"""
-**Buy-and-hold basis (this section)**
+**How the value series is built (this section & §8)**
 
-*How it's computed:* we invest at your current weights once at the start of the common window and never rebalance. Each asset is bought at its first price and held, so the portfolio value is the sum of those drifting holdings:
+*How it's computed:* we invest at your current weights and reset to them on your chosen cadence; between resets each holding drifts with its price. With **Never** selected it is pure buy-and-hold — bought once and held — so the value is the sum of the drifting holdings:
 
-$$V_t = \sum_i w_i\,\frac{P_{i,t}}{P_{i,0}}, \qquad V_0 = 1$$
+$$V_t = V_r \sum_i w_i\,\frac{P_{i,t}}{P_{i,r}}, \qquad V_0 = 1$$
 
-where $w_i$ = your weight in asset $i$ and $P_{i,t}$ = its price.
+where $w_i$ = your weight in asset $i$, $P_{i,t}$ = its price, and $r$ = the most recent rebalance date (for **Never**, $r = 0$ throughout).
 
-*What it means for you:* this mirrors a real account you set up once and leave alone — winners grow into a larger share of the pot and losers shrink, so the mix drifts over time.
+*What it means for you:* this mirrors a real account you rebalance on a schedule (or leave alone) — winners grow into a larger share of the pot and losers shrink between resets. Every figure in this section derives from this single value series.
 
-*Why it's useful:* it shows what your actual holdings would have done untouched. Note this differs from the optimization sections (Monte Carlo, Scipy, VaR), which rebalance back to fixed weights every period — so the *same* portfolio's return, risk and drawdown can differ between sections.
+*Why it's useful:* it shows what your actual holdings would have done at that discipline. Note this differs from the optimization sections (Monte Carlo, Scipy), which always rebalance back to fixed weights every period — so the *same* portfolio's return, risk and drawdown can legitimately differ between sections unless you set the cadence to **Every period**.
 """,
 
     "underwater_curve": r"""
