@@ -65,7 +65,11 @@ folder_path = st.sidebar.text_input(
 data_period = st.sidebar.selectbox(
     "Data period",
     options=["daily", "weekly", "monthly"],
-    index=0,
+    index=2,
+)
+st.sidebar.caption(
+    "💡 For long-term investors (≥ 10 years), monthly data is more meaningful: "
+    "it smooths out short-term noise and better reflects the holding horizon."
 )
 
 # --- Download ---
