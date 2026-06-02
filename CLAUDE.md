@@ -147,6 +147,8 @@ When you change *how* a metric is computed, update its matching entry in `descri
 
 **Per-period terminology:** user-facing labels/tooltips/descriptions say **per-period** (the data interval may be daily/weekly/monthly). Reserve "daily" for genuine daily-interval or calendar references only — the annualisation legend (`252/52/12`), the mixed-calendar weekend-folding caveat, and `.days` durations.
 
+**Asset terminology:** user-facing text says **asset** (section headers, chart titles, tooltips, descriptions), not "ETF" — the portfolio can hold crypto/indices too. "ETF" is intentionally kept in only two places: (a) the **total-return reconstruction** feature, which genuinely targets *accumulating ETFs*; and (b) render **function identifiers** (`render_load_etf_data`, `render_per_etf_analytics`, `render_etf_prices`) — these were *not* renamed with the headers, so don't "tidy" them.
+
 ### Rendering gotchas (silent failures — verify in a browser, not just the source)
 
 Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58).

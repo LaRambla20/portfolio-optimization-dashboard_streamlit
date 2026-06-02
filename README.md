@@ -1,6 +1,6 @@
 # Portfolio Optimization Dashboard
 
-A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price data, visualize the efficient frontier, run Monte Carlo simulations, and evaluate risk via VaR and CVaR.
+A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price data (ETFs, crypto, indices), visualize the efficient frontier, run Monte Carlo simulations, and evaluate risk via VaR and CVaR.
 
 ## Features
 
@@ -74,7 +74,7 @@ efficient_frontier_app/
 ├── ui_components.py            # Section renderers (8 sections)
 └── descriptions.py             # Per-section "How to read this section" guides
 
-individual_indices_data/        # ETF CSVs (pre-loaded samples included; downloader writes here)
+individual_indices_data/        # Asset price CSVs (pre-loaded samples included; downloader writes here)
 ```
 
 ## Data Format
@@ -102,7 +102,7 @@ Section 1 runs two **independent** checks on the raw prices, because a stock spl
 
 **Recorded stock splits (📐).** Read directly from yfinance's `stock splits` column — the exact split ratio (e.g. `2.0` = 2-for-1, `0.1` = 1-for-10 reverse) on the exact ex-date, identical across daily/weekly/monthly because it's recorded data, not inferred from a price jump. Since the app analyses **Adj Close**, which yfinance has *already split-adjusted*, a split produces **no jump** in the series and is purely informational. Files without the column (legacy downloads, `_EXT` reconstructions) are simply skipped.
 
-**Price-anomaly check (⚠️).** A fixed "flag any move > 60%" rule can't serve every asset and interval at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swings further in a month than an equity ETF does in a year. Instead, each step-to-step return is standardised against the asset's *own* history using a fat-tail-resistant robust z-score:
+**Price-anomaly check (⚠️).** A fixed "flag any move > 60%" rule can't serve every asset and interval at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swings further in a month than an equity asset does in a year. Instead, each step-to-step return is standardised against the asset's *own* history using a fat-tail-resistant robust z-score:
 
 ```
 z = (r − median(r)) / (1.4826 · MAD(r))
