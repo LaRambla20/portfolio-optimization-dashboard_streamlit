@@ -32,7 +32,6 @@ from ui_components import (
     render_input_portfolio_analysis,
     render_monte_carlo,
     render_scipy_ef,
-    render_var_analysis,
     render_rolling_returns,
 )
 
@@ -476,5 +475,6 @@ render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_
                   tickers, annualisation_factor, risk_free_rate, num_portfolios,
                   num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                   my_portfolio_allocation, alpha)
-render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation,
-                    merged_df, tickers, rebalance_every_periods, rebalance_label)
+
+# End-of-pipeline signal (every section above has rendered). Also the e2e test's "done" marker.
+st.success(" Analysis complete!")

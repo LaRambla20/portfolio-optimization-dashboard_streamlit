@@ -83,7 +83,7 @@ def display_portfolio_cards(portfolios, alpha):
             c1.metric(
                 "Average annual return",
                 f"{p['ret']:.2%}",
-                help="Average return per year, estimated from daily returns — the same figure "
+                help="Average return per year, estimated from per-period returns — the same figure "
                      "used on the efficient-frontier chart and to compare portfolios.",
             )
             c2.metric("Ann. Volatility", f"{p['std_dev']:.2%}")
@@ -105,7 +105,7 @@ def display_portfolio_cards(portfolios, alpha):
                 f"CVaR ({alpha:.0%})",
                 f"{cvar_val:.2%}",
                 help="Expected shortfall: the average loss on the worst (1−confidence) slice of "
-                     "individual periods (e.g. days). A per-period figure — not annualised — so it "
+                     "individual periods (days, weeks, or months). A per-period figure — not annualised — so it "
                      "sits on a shorter horizon than the annual return and volatility above. "
                      "Computed on a constant-weight (per-period-rebalanced) portfolio.",
             )
@@ -414,7 +414,7 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
             col1.metric(
                 "Average annual return",
                 f"{ann_mean:.2%}",
-                help="Average return per year, estimated from daily returns — the same figure "
+                help="Average return per year, estimated from per-period returns — the same figure "
                      "used on the efficient-frontier chart and to compare portfolios.",
             )
             col2.metric("Annualised Volatility", f"{ann_std:.2%}")
@@ -547,7 +547,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
 def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                                portfolio_cov_matrix, tickers, annualisation_factor,
                                risk_free_rate):
-    st.header("4. Returns & Statistics")
+    st.header("4. Per-Asset Returns & Statistics")
     render_section_help(
         "This section measures how rewarding and how risky your assets have been, and crucially "
         "how they move together — the raw material for diversification.",
@@ -557,9 +557,10 @@ def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
     min_return = portfolio_returns_simple.min()
     max_return = portfolio_returns_simple.max()
     mean_returns = portfolio_returns_simple.mean()
+    median_returns = portfolio_returns_simple.median()
     returns_std_dev = portfolio_returns_simple.std()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.subheader("Min Return (%)")
         st.dataframe((min_return * 100).round(2).to_frame("Min"), width="stretch")
@@ -570,9 +571,16 @@ def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
         st.subheader("Mean Return (%)")
         st.dataframe((mean_returns * 100).round(2).to_frame("Mean"), width="stretch")
     with col4:
+        st.subheader("Median Return (%)")
+        st.dataframe((median_returns * 100).round(2).to_frame("Median"), width="stretch")
+    with col5:
         st.subheader("Std Dev (%)")
         st.dataframe((returns_std_dev * 100).round(2).to_frame("Std Dev"), width="stretch")
-    st.caption("All figures are per-period **simple** returns (the data period selected in the sidebar).")
+    st.caption("All figures are per-period **simple** returns (the data period selected in the sidebar). "
+               "The gap between **mean** and **median** is a skew read: mean above median = a right tail "
+               "(occasional big gains); below = a left tail (occasional big losses). Not annualised — a "
+               "median has no linear `×N` annualisation (quantiles aren't additive); for an annual-scale "
+               "central tendency use the geometric **CAGR** in §2.")
 
     single_asset_sortino = {}
     for t in tickers:
@@ -627,7 +635,8 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         "the sidebar, covering its growth, its worst falls and recovery times, and its tail risk.",
         ["rebalancing", "buy_and_hold", "cumulative_return", "underwater_curve", "max_underwater_period",
          "max_drawdown", "cagr", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
-         "var_historical", "cvar", "rolling_returns_portfolio", "correlation"],
+         "rolling_returns_portfolio", "correlation",
+         "zscore", "var_parametric", "var_historical", "cvar", "return_distribution"],
     )
 
     weights = np.array([my_portfolio_allocation[t] for t in tickers], dtype=np.float64)
@@ -673,24 +682,16 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     drawdown = value / value.cummax() - 1.0
     mdd = abs(drawdown.min())
 
-    # Historical tail risk (per period), guarded by tail-sufficiency exactly as §8.
-    tail = 1 - alpha
-    n_obs = len(bh_ret)
-    n_tail = int(round(tail * n_obs))
-    hist_ok = n_tail >= 5
-    hist_indicative = 5 <= n_tail < 20
-    hist_var_loss = -bh_ret.quantile(tail)
-    hist_cvar_loss = cvar(bh_ret, tail)
-
     st.info(
         f"📌 This section holds your weights **{rebalance_label}**; between rebalances the mix drifts "
-        "with prices. §8 (VaR) uses the *same* cadence. The §6/§7 efficient-frontier cards instead "
-        "assume per-period rebalancing (the MPT basis), so the *same* portfolio's return, risk and "
-        "drawdown can legitimately differ there — unless you set the cadence to 'Every period'."
+        "with prices. The tail-risk subsection below uses this *same* cadence. The §6/§7 "
+        "efficient-frontier cards instead assume per-period rebalancing (the MPT basis), so the "
+        "*same* portfolio's return, risk and drawdown can legitimately differ there — unless you "
+        "set the cadence to 'Every period'."
     )
 
-    # ── Headline metrics ────────────────────────────────────────────────────────────────
-    a1, a2, a3, a4, a5 = st.columns(5)
+    # ── Headline metrics (growth & drawdown; tail risk lives in the subsection below) ─────
+    a1, a2, a3 = st.columns(3)
     a1.metric(
         "CAGR (compound)", f"{cagr:.2%}" if not np.isnan(cagr) else "n/a",
         help="Geometric compound annual growth rate of the buy-and-hold value: "
@@ -707,31 +708,15 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     )
     a3.metric("Annual volatility", f"{ann_vol:.2%}",
               help="Standard deviation of per-period returns, annualised as σ·√N.")
-    a4.metric("Sharpe ratio", f"{sharpe:.3f}" if not np.isnan(sharpe) else "n/a",
-              help="(Average annual return − risk-free rate) ÷ annual volatility.")
-    a5.metric("Sortino ratio", f"{sortino:.3f}" if not np.isnan(sortino) else "n/a",
-              help="Like Sharpe but divides by downside deviation only — penalises harmful "
-                   "volatility, not upside.")
 
     b1, b2, b3 = st.columns(3)
-    b1.metric("Max drawdown", f"{mdd:.2%}",
+    b1.metric("Sharpe ratio", f"{sharpe:.3f}" if not np.isnan(sharpe) else "n/a",
+              help="(Average annual return − risk-free rate) ÷ annual volatility.")
+    b2.metric("Sortino ratio", f"{sortino:.3f}" if not np.isnan(sortino) else "n/a",
+              help="Like Sharpe but divides by downside deviation only — penalises harmful "
+                   "volatility, not upside.")
+    b3.metric("Max drawdown", f"{mdd:.2%}",
               help="Worst peak-to-trough fall of the buy-and-hold value over the full history.")
-    if hist_ok:
-        note = f" (indicative — only {n_tail} obs in the tail)" if hist_indicative else ""
-        b2.metric(f"Historical VaR ({alpha:.0%})", f"{hist_var_loss:.2%}",
-                  help=f"From actual history: the portfolio lost more than this on only its worst "
-                       f"{tail:.0%} of periods ({n_tail} of {n_obs}). Per period, no normal assumption.{note}")
-        b3.metric(f"Historical CVaR ({alpha:.0%})", f"{hist_cvar_loss:.2%}",
-                  help=f"Average loss across the worst {tail:.0%} of periods ({n_tail} of {n_obs}). "
-                       f"Per period, no normal assumption.{note}")
-    else:
-        insufficient = (
-            f"Not enough history for a reliable estimate: only {n_tail} observation(s) fall in the "
-            f"worst {tail:.0%} tail (of {n_obs}). Use a longer date range, a higher-frequency data "
-            "period, or a lower confidence level."
-        )
-        b2.metric(f"Historical VaR ({alpha:.0%})", "n/a", help=insufficient)
-        b3.metric(f"Historical CVaR ({alpha:.0%})", "n/a", help=insufficient)
 
     # ── Cumulative returns: portfolio (bold) + per-asset buy-and-hold overlays ───────────
     st.subheader("Cumulative Returns (buy-and-hold)")
@@ -843,6 +828,9 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     ax_corr.set_title("Asset Correlation Matrix (simple returns)")
     st.pyplot(fig_corr)
     plt.close(fig_corr)
+
+    # ── Tail risk & return distribution (merged from the former §8) ─────────────────────
+    render_tail_risk(bh_ret, alpha)
 
     st.divider()
 
@@ -1189,30 +1177,27 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 8 — VAR ANALYSIS
+# §5 SUBSECTION — TAIL RISK & RETURN DISTRIBUTION (merged from the former §8)
 # ─────────────────────────────────────────────────────────────────
 
-def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation,
-                        merged_df, tickers, rebalance_every_periods=None,
-                        rebalance_label="never rebalanced (buy-and-hold)"):
-    st.header("8. Value at Risk (VaR) Analysis")
-    st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar). Returns below are still "
-               "per-period — the distribution of single-period returns of a portfolio held at this cadence.")
-    render_section_help(
-        "This section estimates how much you could lose on a bad day or in a bad tail of "
-        "outcomes, using Value at Risk and its sibling CVaR.",
-        ["zscore", "var_parametric", "var_historical", "cvar", "return_distribution"],
-    )
+def render_tail_risk(my_portfolio_returns, alpha):
+    """Tail-risk / return-distribution subsection of §5.
+
+    Takes the portfolio's per-period return series already computed by
+    `render_input_portfolio_analysis` (held at the sidebar rebalancing cadence) — so the
+    series is built once — and renders parametric + historical VaR/CVaR, the distribution
+    histogram, and fat-tail diagnostics. No section header or help expander of its own; §5
+    owns those (its expander pulls the zscore/var_parametric/var_historical/cvar/
+    return_distribution descriptions).
+    """
+    st.subheader("Tail Risk & Return Distribution")
+    st.caption("Per-period losses for the portfolio held at the rebalancing cadence set above — "
+               "the distribution of its single-period returns.")
 
     z_score = stats.norm.ppf(1 - alpha)
     tail = 1 - alpha  # tail probability (e.g. 0.05 for 95% confidence)
-    my_portfolio_weights = np.array(list(my_portfolio_allocation.values()), dtype=np.float64)
-    # Per-period returns of the portfolio held at the chosen rebalancing cadence (matches §5).
-    # With 'Every period' this equals portfolio_returns_simple.dot(weights); 'Never' = buy-and-hold.
-    my_portfolio_returns = rebalanced_value_series(
-        merged_df, tickers, my_portfolio_weights, rebalance_every_periods
-    ).pct_change().dropna()
     mu_var = my_portfolio_returns.mean()
+    median_var = my_portfolio_returns.median()
     sigma_var = my_portfolio_returns.std()
 
     # Parametric (normal-model) tail risk, per period — reported as positive losses
@@ -1257,13 +1242,17 @@ def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation
     st.pyplot(fig_var)
     plt.close(fig_var)
 
-    st.markdown("**Daily return profile**")
-    d1, d2, d3, d4 = st.columns(4)
+    st.markdown("**Per-period return profile**")
+    d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Mean (μ)", f"{mu_var:.3%}")
-    d2.metric("Volatility (σ)", f"{sigma_var:.3%}")
-    d3.metric("Skew", f"{skew:.2f}",
+    d2.metric("Median", f"{median_var:.3%}",
+              help="The middle per-period return — half of periods did better, half worse. Compare it "
+                   "to the mean alongside: mean above median = a right tail (occasional big gains), "
+                   "below = a left tail (occasional big losses). A robust companion to skew.")
+    d3.metric("Volatility (σ)", f"{sigma_var:.3%}")
+    d4.metric("Skew", f"{skew:.2f}",
               help="Asymmetry of returns. Negative means crashes tend to be bigger than rallies — a warning sign.")
-    d4.metric("Excess kurtosis", f"{exkurt:.2f}",
+    d5.metric("Excess kurtosis", f"{exkurt:.2f}",
               help="Tail fatness vs a normal bell curve. 0 = normal; higher means extreme moves happen more often "
                    "than the normal model assumes.")
 
@@ -1317,5 +1306,3 @@ def render_var_analysis(portfolio_returns_simple, alpha, my_portfolio_allocation
             "This portfolio's returns are reasonably close to a normal bell curve, so the parametric and "
             "historical figures are broadly consistent."
         )
-
-    st.success(" Analysis complete!")

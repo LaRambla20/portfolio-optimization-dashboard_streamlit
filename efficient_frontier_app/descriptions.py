@@ -122,7 +122,7 @@ CAGR, while the compounding the linear average omits raises it — so CAGR can l
     "avg_annual_return": r"""
 **Average annual return**
 
-*How it's computed:* take the average of the periodic (e.g. daily) returns and scale it up to
+*How it's computed:* take the average of the per-period returns and scale it up to
 a year by the number of periods per year:
 
 $$\mu_{\text{ann}} = \bar{r}\times N$$
@@ -258,18 +258,25 @@ is often tighter than any single asset's, which is diversification working in yo
 
     # ── §4 — Returns & Statistics ────────────────────────────────────────────
     "return_stats": r"""
-**Minimum / maximum / mean / standard deviation of returns**
+**Minimum / maximum / mean / median / standard deviation of returns**
 
 *How it's computed:* basic summary statistics of each asset's periodic returns — the smallest,
-largest, average, and spread:
+largest, average, middle value, and spread:
 
-$$\bar{r}=\frac{1}{T}\sum_{t} r_t, \qquad \sigma=\sqrt{\frac{1}{T}\sum_t (r_t-\bar{r})^2}$$
+$$\bar{r}=\frac{1}{T}\sum_{t} r_t, \qquad \text{median}=r_{(T/2)}, \qquad \sigma=\sqrt{\frac{1}{T}\sum_t (r_t-\bar{r})^2}$$
 
-*What it means for you:* the min and max show the best and worst single periods; the mean shows
-the central tendency; the standard deviation shows how scattered returns are around that centre.
+*What it means for you:* the min and max show the best and worst single periods; the mean and
+median both show the central tendency; the standard deviation shows how scattered returns are
+around that centre. The **mean − median gap** reads skew: mean above median = a right tail
+(rare big gains), below = a left tail (rare big losses).
 
-*Why it's useful:* these four numbers are a quick fingerprint of an asset's behaviour and the
-inputs from which volatility, correlation and the optimization are built.
+*Why it's useful:* these numbers are a quick fingerprint of an asset's behaviour and the inputs
+from which volatility, correlation and the optimization are built.
+
+*Why no annualised median:* the mean annualises linearly (`mean × N`) because it's an expectation
+and expectations add; a median is a quantile and quantiles don't add across a sum, so `median × N`
+estimates nothing meaningful (it actually drifts toward the annualised *mean*). These figures stay
+per-period; for an annual-scale central tendency use the geometric **CAGR** in §2.
 """,
 
     "sortino": r"""
@@ -329,12 +336,12 @@ either alone.
 
 *What it is:* how often your portfolio is reset back to its target weights. Pick it in the sidebar — **Never** (buy-and-hold), **Every 6 months**, **Yearly**, or **Every period**. Between resets the mix drifts: winners grow into a larger share and losers shrink.
 
-*Where it applies:* this section and the VaR section (§8) follow your choice. The efficient-frontier sections (§6 Monte Carlo, §7 Scipy) always assume *per-period* rebalancing — the closed-form Modern Portfolio Theory math (annualised mean and $\sqrt{w^\top \Sigma w}$ volatility) only holds when the portfolio return is $\sum_i w_i r_i$ every period, which *is* per-period rebalancing. Rebalance less often and that identity breaks, so the frontier can't be re-derived for it.
+*Where it applies:* this section — including its Tail Risk & Return Distribution subsection — follows your choice. The efficient-frontier sections (§6 Monte Carlo, §7 Scipy) always assume *per-period* rebalancing — the closed-form Modern Portfolio Theory math (annualised mean and $\sqrt{w^\top \Sigma w}$ volatility) only holds when the portfolio return is $\sum_i w_i r_i$ every period, which *is* per-period rebalancing. Rebalance less often and that identity breaks, so the frontier can't be re-derived for it.
 
 *What it means for you:* less-frequent rebalancing lets the portfolio drift, usually raising its volatility and tail risk versus the per-period ideal. Comparing cadences here shows how much the rebalancing discipline actually matters for *your* allocation.
 """,
     "buy_and_hold": r"""
-**How the value series is built (this section & §8)**
+**How the value series is built (this section, incl. its tail-risk subsection)**
 
 *How it's computed:* we invest at your current weights and reset to them on your chosen cadence; between resets each holding drifts with its price. With **Never** selected it is pure buy-and-hold — bought once and held — so the value is the sum of the drifting holdings:
 
@@ -448,12 +455,12 @@ $$\text{CVaR}_\alpha = -\,\text{average}\big(r \;\big|\; r \le q_{\alpha}\big)$$
 
 where $q_\alpha$ = the cut-off return marking the worst $\alpha$ of outcomes (e.g. the worst 5%).
 
-*What it means for you:* "when things go badly, how bad is the average bad day?" If the worst 5%
-of days average a −4% return, the 95% CVaR is 4%.
+*What it means for you:* "when things go badly, how bad is the average bad period?" If the worst 5%
+of periods average a −4% return, the 95% CVaR is 4%.
 
 *Why it's useful:* Value at Risk only tells you the *threshold* of a bad outcome; CVaR tells you
 how painful it is once you're past that threshold — a more honest picture of tail risk. (At
-portfolio level it's computed on a constant-weight, daily-rebalanced return series.)
+portfolio level it's computed on a constant-weight, per-period-rebalanced return series.)
 """,
 
     # ── §7 — SciPy Efficient Frontier ────────────────────────────────────────
@@ -487,7 +494,7 @@ cloud only *approaches* it from below.
 sits on or below this line; the closer to the line, the more efficient your mix.
 """,
 
-    # ── §8 — Value at Risk ───────────────────────────────────────────────────
+    # ── Tail Risk & Return Distribution (rendered inside §5; formerly §8) ─────
     "zscore": r"""
 **z-score**
 
@@ -525,7 +532,7 @@ VaR of 5% means only about 1 period in 20 should be worse than a 5% loss.
 
 *Why it's useful:* it puts a single, intuitive figure on downside risk — widely used by banks
 and funds. Caveat: it assumes a bell curve, so it can *understate* risk for fat-tailed assets
-like crypto, where extreme days happen more often than the curve predicts. Compare it with the
+like crypto, where extreme periods happen more often than the curve predicts. Compare it with the
 *Historical VaR/CVaR* shown beside it to see whether that assumption actually holds.
 """,
 
@@ -537,7 +544,7 @@ past returns and read the tail off directly. Historical VaR is the loss it excee
 worst $(1-\text{confidence})$ of periods; historical CVaR is the average loss across exactly
 those worst periods.
 
-*What it means for you:* "based on what really happened, this is what the bad days looked like."
+*What it means for you:* "based on what really happened, this is what the bad periods looked like."
 It captures the crashes and fat tails that a smooth bell curve glosses over.
 
 *Why it's useful:* it's the reality check on the parametric (normal) figures. When the historical
@@ -557,7 +564,9 @@ the shaded red region is the worst tail beyond the VaR threshold.
 
 *Why it's useful:* it lets you eyeball whether the bell-curve assumption behind parametric VaR is
 reasonable. If the real bars stick out well past the curve on the left, true tail risk is worse
-than the formula suggests.
+than the formula suggests. The **median** beside the mean in the profile is a robust companion to
+skew: mean above median points to a right tail, below to a left tail. Both stay per-period (a
+median has no linear `×N` annualisation).
 """,
 
 }

@@ -21,11 +21,10 @@ SECTIONS = [
     "2. Per-ETF Analytics",
     "3. ETF Prices",
     "3b. Rolling Returns",
-    "4. Returns & Statistics",
+    "4. Per-Asset Returns & Statistics",
     "5. Input Portfolio Analysis",
     "6. Monte Carlo Efficient Frontier",
     "7. Scipy Efficient Frontier",
-    "8. Value at Risk",
 ]
 
 

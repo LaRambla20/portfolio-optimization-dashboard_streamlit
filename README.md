@@ -4,8 +4,8 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load ETF price d
 
 ## Features
 
-- **Input portfolio analysis** — your allocation held at a **selectable rebalancing cadence** (buy-and-hold by default): allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, plus headline return/risk metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown, historical VaR/CVaR)
-- **Selectable rebalancing frequency** — choose how often your portfolio resets to target weights (Never / Every 6 months / Yearly / Every period). Governs the Input Portfolio (§5) and VaR (§8) sections, which follow your cadence; the efficient-frontier sections stay per-period (the basis MPT optimization requires). Each affected section states its rebalancing basis up top
+- **Input portfolio analysis** — your allocation held at a **selectable rebalancing cadence** (buy-and-hold by default): allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, headline growth/drawdown metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown), and a **Tail Risk & Return Distribution** subsection (parametric + historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram)
+- **Selectable rebalancing frequency** — choose how often your portfolio resets to target weights (Never / Every 6 months / Yearly / Every period). Governs the Input Portfolio section (§5, including its tail-risk subsection), which follows your cadence; the efficient-frontier sections stay per-period (the basis MPT optimization requires). Each affected section states its rebalancing basis up top
 - **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP)
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
 - **Per-ETF analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
@@ -31,7 +31,7 @@ python -m venv .venv
 
 ## Usage
 
-1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, DBMF, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
+1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
 
 2. **Add or refresh tickers** — expand the "Download ETF Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** to store raw prices instead.
 
@@ -49,7 +49,7 @@ A Playwright end-to-end test drives the full dashboard in a real browser. Start 
 .venv\Scripts\python test_dashboard.py
 ```
 
-This clicks **Run Analysis**, waits for all computations to finish, verifies all 9 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
+This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
 
 For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 
@@ -57,7 +57,7 @@ For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 HEADLESS=1 .venv\Scripts\python test_dashboard.py
 ```
 
-Unit tests run standalone (no app or network required) — total-return reconstruction / EUR-conversion logic, and the rebalanced-portfolio value series (the basis for §5 and §8):
+Unit tests run standalone (no app or network required) — total-return reconstruction / EUR-conversion logic, and the rebalanced-portfolio value series (the basis for §5, including its tail-risk subsection):
 
 ```bash
 .venv\Scripts\python test_total_return_synthesis.py
@@ -71,7 +71,7 @@ efficient_frontier_app/
 ├── efficient_frontier_app.py   # Entry point — sidebar, orchestration
 ├── portfolio_calculations.py   # Pure math: optimization, Monte Carlo, VaR/CVaR
 ├── data_handling.py            # CSV loading, merging, return computation
-├── ui_components.py            # Section renderers (9 sections)
+├── ui_components.py            # Section renderers (8 sections)
 └── descriptions.py             # Per-section "How to read this section" guides
 
 individual_indices_data/        # ETF CSVs (pre-loaded samples included; downloader writes here)
@@ -91,11 +91,10 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | 2 | Per-ETF Analytics | CAGR, returns, drawdown per asset |
 | 3 | ETF Prices | Raw and normalized price charts |
 | 3b | Rolling Returns | Moving-window returns for individual assets |
-| 4 | Returns & Statistics | Covariance/correlation matrices, return distributions |
-| 5 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default): allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), historical VaR/CVaR, correlation heatmap |
+| 4 | Per-Asset Returns & Statistics | Per-asset min/max/mean/median/std, Sortino, covariance/correlation matrices, return distributions |
+| 5 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default): allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
 | 6 | Monte Carlo EF | Random portfolio simulation (Sharpe & Sortino) — per-period rebalancing |
 | 7 | SciPy EF | Optimized efficient frontier via SLSQP — per-period rebalancing |
-| 8 | VaR Analysis | Per-period parametric & historical VaR/CVaR side by side, with skew/kurtosis fat-tail diagnostics; follows the selected rebalancing cadence |
 
 ## Data-quality checks (section 1)
 
