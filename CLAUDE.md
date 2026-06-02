@@ -40,6 +40,8 @@ Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all
 
 **Boot-check (fast path):** for sidebar-only / non-render changes, launch the app headless and grep the boot log for `error|traceback` instead of the full Playwright run — e.g. `streamlit run ... --server.headless true > boot.log 2>&1 &` then inspect `boot.log`.
 
+> **PowerShell boot-check caveat:** that bash redirection misleads on PowerShell — Streamlit's normal Uvicorn startup line surfaces in the log as a `NativeCommandError`/`RemoteException` (not a real error), `boot.log` is written UTF-16 (garbles grep), and a background run reports **exit 255** when force-killed (also not a failure). Treat **port 8501 LISTENING** as the success signal, not a clean log. Stop the app with `Get-Process streamlit | Stop-Process -Force` and confirm the port is freed.
+
 **Install Playwright** (already in venv; only needed once on a fresh clone):
 ```bash
 .venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org playwright
