@@ -17,14 +17,14 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 HEADLESS = os.environ.get("HEADLESS", "0") == "1"
 
 SECTIONS = [
-    "1. Load ETF Data",
-    "2. Per-ETF Analytics",
-    "3. ETF Prices",
-    "3b. Rolling Returns",
-    "4. Per-Asset Returns & Statistics",
-    "5. Input Portfolio Analysis",
-    "6. Monte Carlo Efficient Frontier",
-    "7. Scipy Efficient Frontier",
+    "1. Load Data",
+    "2. Per-Asset Analytics",
+    "3. Per-Asset Prices",
+    "4. Per-Asset Rolling Returns",
+    "5. Per-Asset Returns & Statistics",
+    "6. Input Portfolio Analysis",
+    "7. Monte Carlo Efficient Frontier Portfolio Optimization",
+    "8. Scipy Efficient Frontier Portfolio Optimization",
 ]
 
 
@@ -60,7 +60,7 @@ def test_dashboard():
         run_btn = page.get_by_role("button", name="Run Analysis")
         run_btn.click()
         print("  Waiting for full analysis to complete (Monte Carlo takes ~30-60s)...")
-        # Wait for the final success message rendered by render_var_analysis
+        # Wait for the final success message rendered at the end of the entry point
         page.wait_for_selector("text=Analysis complete", timeout=180_000)
         wait_for_streamlit(page)
         shot(page, "02_after_run")

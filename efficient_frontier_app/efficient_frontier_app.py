@@ -59,7 +59,7 @@ st.sidebar.subheader("Data Source")
 folder_path = st.sidebar.text_input(
     "CSV folder path",
     value="individual_indices_data",
-    help="Path to the folder containing the downloaded ETF CSVs.",
+    help="Path to the folder containing the downloaded asset CSVs.",
 )
 data_period = st.sidebar.selectbox(
     "Data period",
@@ -72,7 +72,7 @@ st.sidebar.caption(
 )
 
 # --- Download ---
-st.sidebar.subheader("📥 Download ETF Data")
+st.sidebar.subheader("📥 Download Data")
 with st.sidebar.expander("Download settings", expanded=False):
     dl_tickers_raw = st.text_area(
         "Tickers to download (one per line)",
@@ -208,9 +208,10 @@ rebalancing_frequency = st.sidebar.selectbox(
     "Rebalancing frequency",
     options=["Never", "Every 6 months", "Yearly", "Every period"],
     index=0,
-    help="How often your portfolio is reset to its target weights. Governs §5 (Input Portfolio) "
-         "and §8 (VaR) only — the §6/§7 efficient frontier always assumes per-period rebalancing, "
-         "the basis MPT optimization requires. 'Never' = buy-and-hold (weights drift).",
+    help="How often your portfolio is reset to its target weights. Governs §6 (Input Portfolio, "
+         "incl. its tail-risk subsection) only — the §7/§8 efficient frontier always assumes "
+         "per-period rebalancing, the basis MPT optimization requires. 'Never' = buy-and-hold "
+         "(weights drift).",
 )
 
 alpha = st.sidebar.slider(
@@ -305,7 +306,7 @@ if dl_button:
     elif not dl_intervals:
         st.warning("Select at least one interval to download.")
     else:
-        st.subheader("📥 Downloading ETF Data")
+        st.subheader("📥 Downloading Data")
         log_box  = st.empty()
         prog_bar = st.progress(0)
         status   = st.empty()

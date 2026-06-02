@@ -19,7 +19,7 @@ import streamlit as st
 
 DESCRIPTIONS = {
 
-    # ── §1 — Load ETF Data ───────────────────────────────────────────────────
+    # ── §1 — Load Data ───────────────────────────────────────────────────────
     "price_spikes": r"""
 **Stock splits & price-anomaly check**
 
@@ -32,7 +32,7 @@ series and is purely informational.
 
 *Anomaly check (⚠️):* a fixed "flag moves > 60%" rule can't serve every asset and interval
 at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swings further in
-a month than an equity ETF does in a year. Instead we standardise each return against the
+a month than an equity asset does in a year. Instead we standardise each return against the
 asset's *own* history using a fat-tail-resistant scale, and flag only the genuine outliers:
 
 $$z_t=\frac{r_t-\mathrm{median}(r)}{1.4826\cdot\mathrm{MAD}(r)},\qquad
@@ -60,14 +60,14 @@ $$\text{start}=\max_i(\text{start}_i), \qquad \text{end}=\min_i(\text{end}_i)$$
 *What it means for you:* a portfolio can only be compared over dates where *every* asset has
 data. The asset with the shortest history (the "binding" one) sets how far back you can look.
 The window also keeps only dates shared by all assets, so if you mix a 7-day market (crypto) with
-5-day markets (stock ETFs), the crypto's weekend moves get folded into the next shared trading
+5-day markets (stocks), the crypto's weekend moves get folded into the next shared trading
 day — making its daily figures slightly approximate.
 
 *Why it's useful:* it tells you how much real, overlapping history your analysis rests on —
 a frontier built on 11 months of common data is far less trustworthy than one built on 10 years.
 """,
 
-    # ── §2 — Per-ETF Analytics ───────────────────────────────────────────────
+    # ── §2 — Per-Asset Analytics ─────────────────────────────────────────────
     "simple_return": r"""
 **Simple return (single period)**
 
@@ -196,7 +196,7 @@ losses happened, which matters enormously for how an investment actually felt to
 *How it's computed:* the same *Average annual return* and *Annualised volatility* as above, but
 measured over a single backward window of a chosen length (the last 1, 3, 5 years, or full
 history) ending at one fixed anchor date. The window doesn't slide — each row is one number for
-one look-back horizon. (For genuinely sliding, date-by-date windows, see the *Rolling Returns*
+one look-back horizon. (For genuinely sliding, date-by-date windows, see the *Per-Asset Rolling Returns*
 section instead.)
 
 *What it means for you:* how the asset's return and risk looked over recent stretches, rather
@@ -206,7 +206,7 @@ than its entire history — useful because markets change character over time.
 look-back horizons shows whether performance and risk have been improving, deteriorating, or steady.
 """,
 
-    # ── §3 — ETF Prices ──────────────────────────────────────────────────────
+    # ── §3 — Per-Asset Prices ────────────────────────────────────────────────
     "normalized_prices": r"""
 **Normalized prices (base = 1000)**
 
@@ -222,7 +222,7 @@ they compare today?" — stripping away the fact that one share might cost €5 
 Rebasing to a common start makes relative performance instantly readable on one chart.
 """,
 
-    # ── §3b — Rolling Returns ────────────────────────────────────────────────
+    # ── §4 — Per-Asset Rolling Returns ───────────────────────────────────────
     "rolling_returns_asset": r"""
 **Rolling returns (per asset)**
 
@@ -256,7 +256,7 @@ not the individual assets.
 is often tighter than any single asset's, which is diversification working in your favour.
 """,
 
-    # ── §4 — Returns & Statistics ────────────────────────────────────────────
+    # ── §5 — Per-Asset Returns & Statistics ──────────────────────────────────
     "return_stats": r"""
 **Minimum / maximum / mean / median / standard deviation of returns**
 
@@ -330,13 +330,13 @@ way to cut portfolio risk. Two strong-but-uncorrelated assets make a much smooth
 either alone.
 """,
 
-    # ── §5 — Input Portfolio Analysis ────────────────────────────────────────
+    # ── §6 — Input Portfolio Analysis ────────────────────────────────────────
     "rebalancing": r"""
 **Rebalancing frequency**
 
 *What it is:* how often your portfolio is reset back to its target weights. Pick it in the sidebar — **Never** (buy-and-hold), **Every 6 months**, **Yearly**, or **Every period**. Between resets the mix drifts: winners grow into a larger share and losers shrink.
 
-*Where it applies:* this section — including its Tail Risk & Return Distribution subsection — follows your choice. The efficient-frontier sections (§6 Monte Carlo, §7 Scipy) always assume *per-period* rebalancing — the closed-form Modern Portfolio Theory math (annualised mean and $\sqrt{w^\top \Sigma w}$ volatility) only holds when the portfolio return is $\sum_i w_i r_i$ every period, which *is* per-period rebalancing. Rebalance less often and that identity breaks, so the frontier can't be re-derived for it.
+*Where it applies:* this section — including its Tail Risk & Return Distribution subsection — follows your choice. The efficient-frontier sections (§7 Monte Carlo, §8 Scipy) always assume *per-period* rebalancing — the closed-form Modern Portfolio Theory math (annualised mean and $\sqrt{w^\top \Sigma w}$ volatility) only holds when the portfolio return is $\sum_i w_i r_i$ every period, which *is* per-period rebalancing. Rebalance less often and that identity breaks, so the frontier can't be re-derived for it.
 
 *What it means for you:* less-frequent rebalancing lets the portfolio drift, usually raising its volatility and tail risk versus the per-period ideal. Comparing cadences here shows how much the rebalancing discipline actually matters for *your* allocation.
 """,
@@ -380,7 +380,7 @@ If value never returns to its peak within the data, the period is shown as "ongo
 *Why it's useful:* many investors abandon a strategy not at the bottom but during the long, flat climb back. Knowing the worst recovery time sets expectations for how much patience the portfolio has historically demanded.
 """,
 
-    # ── §6 — Monte Carlo Efficient Frontier ──────────────────────────────────
+    # ── §7 — Monte Carlo Efficient Frontier ──────────────────────────────────
     "monte_carlo": r"""
 **Monte Carlo simulation (random portfolios)**
 
@@ -463,7 +463,7 @@ how painful it is once you're past that threshold — a more honest picture of t
 portfolio level it's computed on a constant-weight, per-period-rebalanced return series.)
 """,
 
-    # ── §7 — SciPy Efficient Frontier ────────────────────────────────────────
+    # ── §8 — Scipy Efficient Frontier ────────────────────────────────────────
     "scipy_optimization": r"""
 **Mathematical optimization (SLSQP)**
 
@@ -494,7 +494,7 @@ cloud only *approaches* it from below.
 sits on or below this line; the closer to the line, the more efficient your mix.
 """,
 
-    # ── Tail Risk & Return Distribution (rendered inside §5; formerly §8) ─────
+    # ── Tail Risk & Return Distribution (rendered inside §6; formerly standalone) ─
     "zscore": r"""
 **z-score**
 

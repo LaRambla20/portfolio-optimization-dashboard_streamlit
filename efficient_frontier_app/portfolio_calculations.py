@@ -215,12 +215,12 @@ def portfolio_info_dict(name, std_dev, ret, sharpe, alloc_df, var=None):
     return d, alloc_df
 
 # ─────────────────────────────────────────────────────────────────
-# REBALANCED PORTFOLIO VALUE SERIES (Input Portfolio Analysis §5, VaR §8)
+# REBALANCED PORTFOLIO VALUE SERIES (Input Portfolio Analysis §6, incl. its tail-risk subsection)
 # ─────────────────────────────────────────────────────────────────
 # A single value series for a portfolio held at target weights and periodically rebalanced. The
-# two optimization sections (§6/§7) instead use the closed-form per-period-rebalanced MPT basis
+# two optimization sections (§7/§8) instead use the closed-form per-period-rebalanced MPT basis
 # (mean/cov), which is *not* this series — so the same portfolio's realised return/risk/drawdown
-# can legitimately differ between §5/§8 and §6/§7. The cadence is chosen in the sidebar.
+# can legitimately differ between §6 and §7/§8. The cadence is chosen in the sidebar.
 
 def rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods=None):
     """Normalized portfolio value (V_0 = 1) under periodic rebalancing to target `weights`.

@@ -95,7 +95,7 @@ def display_portfolio_cards(portfolios, alpha):
                 f"{p.get('max_dd', 0):.2%}",
                 help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
                      "not annualised. Assumes constant weights (per-period rebalancing), not buy-and-hold. "
-                     "For a less-frequent cadence see §5/§8.",
+                     "For a less-frequent cadence see §6.",
             )
             # CVaR computed once here, at the user's chosen confidence level, from the portfolio's
             # own return series (single CVaR definition / sign across the whole app: positive = loss).
@@ -135,12 +135,12 @@ def display_portfolio_cards(portfolios, alpha):
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 1 — LOAD ETF DATA (split detection + anomaly warnings + data availability)
+# SECTION 1 — LOAD DATA (split detection + anomaly warnings + data availability)
 # ─────────────────────────────────────────────────────────────────
 
 def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability,
                          synthetic_info=None, currency_info=None):
-    st.header("1. Load ETF Data")
+    st.header("1. Load Data")
     render_section_help(
         "This section loads your price data and checks it is usable — identifying recorded "
         "stock splits, flagging statistically anomalous jumps, and showing how much history "
@@ -340,14 +340,14 @@ def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availabil
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 2 — PER-ETF ANALYTICS
+# SECTION 2 — PER-ASSET ANALYTICS
 # ─────────────────────────────────────────────────────────────────
 
 def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
                               annualisation_factor):
-    st.header("2. Per-ETF Analytics")
+    st.header("2. Per-Asset Analytics")
     render_section_help(
-        "This section looks at each ETF on its own: how much it returned, how much it swung, "
+        "This section looks at each asset on its own: how much it returned, how much it swung, "
         "and its worst fall — so you understand each holding before combining them.",
         ["simple_return", "calendar_year_return", "cagr", "avg_annual_return",
          "annual_volatility", "max_drawdown", "cumulative_return", "lookback_annual_metrics"],
@@ -464,11 +464,11 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
 
 
 # ─────────────────────────────────────────────────────────────────
-# SECTION 3 — ETF PRICES
+# SECTION 3 — PER-ASSET PRICES
 # ─────────────────────────────────────────────────────────────────
 
 def render_etf_prices(merged_df, tickers):
-    st.header("3. ETF Prices")
+    st.header("3. Per-Asset Prices")
     render_section_help(
         "This section plots prices so you can compare how your assets moved — both in real "
         "terms and rebased to a common starting point.",
@@ -482,10 +482,10 @@ def render_etf_prices(merged_df, tickers):
     fig_raw, ax_raw = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
         ax_raw.plot(merged_df["date"], merged_df[ticker], lw=1, label=ticker)
-    ax_raw.set_title("ETFs Closing Prices Over Time")
+    ax_raw.set_title("Assets Closing Prices Over Time")
     ax_raw.set_xlabel("Date")
     ax_raw.set_ylabel("Closing Prices [EUR]")
-    ax_raw.legend(title="ETF")
+    ax_raw.legend(title="Asset")
     ax_raw.grid(True)
     st.pyplot(fig_raw)
     plt.close(fig_raw)
@@ -501,10 +501,10 @@ def render_etf_prices(merged_df, tickers):
     fig_norm, ax_norm = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
         ax_norm.plot(norm_df["date"], norm_df[ticker], lw=1, label=ticker)
-    ax_norm.set_title("ETFs Normalized Closing Prices Over Time")
+    ax_norm.set_title("Assets Normalized Closing Prices Over Time")
     ax_norm.set_xlabel("Date")
     ax_norm.set_ylabel("Normalized Closing Prices [EUR]")
-    ax_norm.legend(title="ETF")
+    ax_norm.legend(title="Asset")
     ax_norm.grid(True)
     st.pyplot(fig_norm)
     plt.close(fig_norm)
@@ -513,7 +513,7 @@ def render_etf_prices(merged_df, tickers):
 
 
 def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
-    st.header("3b. Rolling Returns")
+    st.header("4. Per-Asset Rolling Returns")
     render_section_help(
         "This section shows returns over long rolling windows, so you can see what an investor "
         "would have earned holding for 1, 5 or 10 years starting at any point in time.",
@@ -523,7 +523,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
         st.warning(f"Insufficient data for {rolling_window_years}-year rolling window.")
         return
 
-    # Individual assets (the portfolio rolling-returns chart lives in §5, Input Portfolio Analysis).
+    # Individual assets (the portfolio rolling-returns chart lives in §6, Input Portfolio Analysis).
     st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns")
     fig, ax = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
@@ -532,7 +532,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
     ax.set_xlabel("Date")
     ax.set_ylabel("Rolling Return")
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
-    ax.legend(title="ETF")
+    ax.legend(title="Asset")
     ax.grid(True)
     st.pyplot(fig)
     plt.close(fig)
@@ -547,7 +547,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
 def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                                portfolio_cov_matrix, tickers, annualisation_factor,
                                risk_free_rate):
-    st.header("4. Per-Asset Returns & Statistics")
+    st.header("5. Per-Asset Returns & Statistics")
     render_section_help(
         "This section measures how rewarding and how risky your assets have been, and crucially "
         "how they move together — the raw material for diversification.",
@@ -600,7 +600,7 @@ def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
 
     st.subheader("Correlation Matrix (used for optimization — simple returns)")
     st.dataframe(portfolio_returns_simple.corr(), width="stretch")
-    st.caption("The correlation heatmap is shown in §5, Input Portfolio Analysis.")
+    st.caption("The correlation heatmap is shown in §6, Input Portfolio Analysis.")
 
     fig_ret, ax_ret = plt.subplots(figsize=(12, 5))
     for c in portfolio_returns_simple.columns.values:
@@ -608,7 +608,7 @@ def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                     lw=1, alpha=0.8, label=c)
     ax_ret.legend(loc="upper right", fontsize=10)
     ax_ret.set_ylabel("Return [%]")
-    ax_ret.set_title("ETF Returns")
+    ax_ret.set_title("Asset Returns")
     st.pyplot(fig_ret)
     plt.close(fig_ret)
 
@@ -628,7 +628,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
                                     my_portfolio_allocation, annualisation_factor,
                                     risk_free_rate, alpha, window_periods, rolling_window_years,
                                     rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)"):
-    st.header("5. Input Portfolio Analysis")
+    st.header("6. Input Portfolio Analysis")
     st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar).")
     render_section_help(
         "This section analyses your actual allocation, held at the rebalancing cadence you chose in "
@@ -684,7 +684,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 
     st.info(
         f"📌 This section holds your weights **{rebalance_label}**; between rebalances the mix drifts "
-        "with prices. The tail-risk subsection below uses this *same* cadence. The §6/§7 "
+        "with prices. The tail-risk subsection below uses this *same* cadence. The §7/§8 "
         "efficient-frontier cards instead assume per-period rebalancing (the MPT basis), so the "
         "*same* portfolio's return, risk and drawdown can legitimately differ there — unless you "
         "set the cadence to 'Every period'."
@@ -803,7 +803,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     else:
         u2.metric("Longest underwater stretch", "n/a", help="Value never fell below a prior peak.")
 
-    # ── Portfolio rolling returns (moved from §3b), on the buy-and-hold value ────────────
+    # ── Portfolio rolling returns (moved from §4), on the buy-and-hold value ────────────
     st.subheader(f"Portfolio — {rolling_window_years}Y Rolling Returns (Buy-and-Hold)")
     if len(value) > window_periods:
         roll = (value / value.shift(window_periods) - 1.0).dropna()
@@ -821,7 +821,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         st.info(f"Insufficient data for a {rolling_window_years}-year rolling window "
                 f"({len(value)} periods ≤ {window_periods}).")
 
-    # ── Asset correlation heatmap (moved from §4) ───────────────────────────────────────
+    # ── Asset correlation heatmap (moved from §5) ───────────────────────────────────────
     st.subheader("Asset Correlation Heatmap (simple returns)")
     fig_corr, ax_corr = plt.subplots(figsize=(8, 5))
     sns.heatmap(portfolio_returns_simple.corr(), annot=True, cmap="coolwarm", center=0, ax=ax_corr)
@@ -829,7 +829,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     st.pyplot(fig_corr)
     plt.close(fig_corr)
 
-    # ── Tail risk & return distribution (merged from the former §8) ─────────────────────
+    # ── Tail risk & return distribution (merged from the former standalone VaR section) ──
     render_tail_risk(bh_ret, alpha)
 
     st.divider()
@@ -842,10 +842,10 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                         custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha):
-    st.header("6. Monte Carlo Efficient Frontier (Volatility)")
+    st.header("7. Monte Carlo Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
-               "sidebar Rebalancing-frequency setting (which governs §5 and §8).")
+               "sidebar Rebalancing-frequency setting (which governs §6).")
     render_section_help(
         "This section randomly simulates thousands of portfolios to map the trade-off between "
         "risk and return, and highlights a few notable ones.",
@@ -1007,10 +1007,10 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
                      my_portfolio_allocation, alpha):
-    st.header("7. Scipy Efficient Frontier (Volatility)")
+    st.header("8. Scipy Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
-               "sidebar Rebalancing-frequency setting (which governs §5 and §8).")
+               "sidebar Rebalancing-frequency setting (which governs §6).")
     render_section_help(
         "This section mathematically solves for the best portfolios — rather than guessing "
         "randomly — and draws the efficient frontier: the best return achievable at each level of risk.",
@@ -1177,16 +1177,16 @@ def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_
 
 
 # ─────────────────────────────────────────────────────────────────
-# §5 SUBSECTION — TAIL RISK & RETURN DISTRIBUTION (merged from the former §8)
+# §6 SUBSECTION — TAIL RISK & RETURN DISTRIBUTION (merged from the former standalone VaR section)
 # ─────────────────────────────────────────────────────────────────
 
 def render_tail_risk(my_portfolio_returns, alpha):
-    """Tail-risk / return-distribution subsection of §5.
+    """Tail-risk / return-distribution subsection of §6.
 
     Takes the portfolio's per-period return series already computed by
     `render_input_portfolio_analysis` (held at the sidebar rebalancing cadence) — so the
     series is built once — and renders parametric + historical VaR/CVaR, the distribution
-    histogram, and fat-tail diagnostics. No section header or help expander of its own; §5
+    histogram, and fat-tail diagnostics. No section header or help expander of its own; §6
     owns those (its expander pulls the zscore/var_parametric/var_historical/cvar/
     return_distribution descriptions).
     """
