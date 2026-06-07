@@ -194,8 +194,9 @@ losses happened, which matters enormously for how an investment actually felt to
 **Annualised metrics by look-back period**
 
 *How it's computed:* the same *Average annual return* and *Annualised volatility* as above, but
-measured over a single backward window of a chosen length (the last 1, 3, 5 years, or full
-history) ending at one fixed anchor date. The window doesn't slide — each row is one number for
+measured over a single backward window of a chosen length (the last 1, 3 or 5 years that fully fit
+within the asset's history, plus its full history — longer windows are omitted rather than truncated)
+ending at one fixed anchor date. The window doesn't slide — each row is one number for
 one look-back horizon. (For genuinely sliding, date-by-date windows, see the *Per-Asset Rolling Returns*
 section instead.)
 

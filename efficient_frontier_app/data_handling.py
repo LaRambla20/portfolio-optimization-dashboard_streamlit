@@ -14,6 +14,8 @@ import queue
 
 def evaluate_simple_return(prices, start_date, end_date):
     sub = prices.loc[start_date:end_date]
+    if len(sub) == 0:
+        return np.nan
     start_price = sub.iloc[0]
     end_price = sub.iloc[-1]
     return end_price / start_price - 1
@@ -21,9 +23,13 @@ def evaluate_simple_return(prices, start_date, end_date):
 
 def evaluate_CAGR(prices, start_date, end_date):
     sub = prices.loc[start_date:end_date]
+    if len(sub) == 0:
+        return np.nan
     start_price = sub.iloc[0]
     end_price = sub.iloc[-1]
     n_years = (sub.index[-1] - sub.index[0]).days / 365.25
+    if n_years <= 0:  # single-row / zero-span slice → CAGR undefined
+        return np.nan
     return (end_price / start_price) ** (1 / n_years) - 1
 
 

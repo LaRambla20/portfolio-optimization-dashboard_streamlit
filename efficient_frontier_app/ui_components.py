@@ -341,6 +341,28 @@ def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availabil
 # SECTION 2 — PER-ASSET ANALYTICS
 # ─────────────────────────────────────────────────────────────────
 
+def _full_history_label(start, end):
+    """Honest label for a full-history window, e.g. 'Full (8y 4m)'."""
+    days = max((end - start).days, 0)
+    yrs = days / 365.25
+    y = int(yrs)
+    m = int(round((yrs - y) * 12))
+    if m == 12:
+        y += 1
+        m = 0
+    return f"Full ({y}y {m}m)"
+
+
+def _lookback_year_windows(ref_end, data_start):
+    """(label, start) pairs for the 1/3/5-year look-backs that *fully fit* within the asset's
+    history, plus a true full-history row. Windows longer than the asset's life are dropped rather
+    than silently truncated to the data start (which would mislabel, e.g., a 3y span as '5y')."""
+    wins = [(f"{y}y", ref_end - pd.DateOffset(years=y)) for y in (1, 3, 5)]
+    wins = [(lbl, sd) for lbl, sd in wins if pd.notna(sd) and sd >= data_start]
+    wins.append((_full_history_label(data_start, ref_end), data_start))
+    return wins
+
+
 def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_string,
                               annualisation_factor, real_terms=False, annual_inflation=0.0):
     st.header("2. Per-Asset Analytics")
@@ -371,45 +393,50 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
             subdf["adj close"] = subdf["adj close"] / real_deflator(subdf.index, annual_inflation)
 
         with st.expander(f"{ticker}", expanded=False):
+            data_start = subdf.index[0]
             end_date = subdf.index[-1]
-            full_years = int((subdf.index[-1] - subdf.index[0]).days / 365.25)
-            start_dates_simple = {
-                "YTD": subdf[subdf.index.year == (subdf.index.max().year - 1)].index.max(),
-                "1mo": end_date - pd.DateOffset(months=1),
-                "3mo": end_date - pd.DateOffset(months=3),
-                "6mo": end_date - pd.DateOffset(months=6),
-                "1y": end_date - pd.DateOffset(years=1),
-                "3y": end_date - pd.DateOffset(years=3),
-                "5y": end_date - pd.DateOffset(years=5),
-                f"{full_years}y": end_date - pd.DateOffset(years=full_years),
-            }
+
+            # Look-back windows that fully fit this asset's history (+ a true full-history row);
+            # windows longer than its life are omitted, not silently truncated and mislabelled.
+            simple_windows = []
+            ytd_idx = subdf[subdf.index.year == (end_date.year - 1)].index
+            if len(ytd_idx):
+                simple_windows.append(("YTD", ytd_idx.max()))
+            for lbl, off in (("1mo", pd.DateOffset(months=1)),
+                             ("3mo", pd.DateOffset(months=3)),
+                             ("6mo", pd.DateOffset(months=6))):
+                sd = end_date - off
+                if sd >= data_start:
+                    simple_windows.append((lbl, sd))
+            simple_windows += _lookback_year_windows(end_date, data_start)
 
             simple_rows = []
-            for label, sd in start_dates_simple.items():
+            for label, sd in simple_windows:
                 sr = evaluate_simple_return(subdf["adj close"], sd, end_date)
                 simple_rows.append({"Period": label, "From": sd.date(), "To": end_date.date(),
                                      "Simple Return": f"{sr:.2%}"})
             st.subheader("Simple Return (single-period)")
             st.dataframe(pd.DataFrame(simple_rows), width="stretch", hide_index=True)
+            st.caption("Windows longer than this asset's available history are omitted; "
+                       "**Full** covers its entire history.")
 
             yearly_rows = []
             for yr_offset in range(3):
-                considered_year = subdf.index.max().year - (1 + yr_offset)
-                ed = subdf[subdf.index.year == considered_year].index.max()
+                considered_year = end_date.year - (1 + yr_offset)
+                year_idx = subdf[subdf.index.year == considered_year].index
+                if len(year_idx) == 0:  # asset wasn't trading that calendar year
+                    continue
+                ed = year_idx.max()
                 sd = ed - pd.DateOffset(years=1)
                 sr = evaluate_simple_return(subdf["adj close"], sd, ed)
                 yearly_rows.append({"Year": considered_year, "From": sd.date(), "To": ed.date(),
                                      "Simple Return": f"{sr:.2%}"})
-            st.dataframe(pd.DataFrame(yearly_rows), width="stretch", hide_index=True)
+            if yearly_rows:
+                st.dataframe(pd.DataFrame(yearly_rows), width="stretch", hide_index=True)
 
-            start_dates_cagr = {
-                "1y": end_date - pd.DateOffset(years=1),
-                "3y": end_date - pd.DateOffset(years=3),
-                "5y": end_date - pd.DateOffset(years=5),
-                f"{full_years}y": end_date - pd.DateOffset(years=full_years),
-            }
+            cagr_windows = _lookback_year_windows(end_date, data_start)
             cagr_rows = []
-            for label, sd in start_dates_cagr.items():
+            for label, sd in cagr_windows:
                 cagr = evaluate_CAGR(subdf["adj close"], sd, end_date)
                 cagr_rows.append({"Period": label, "From": sd.date(), "To": end_date.date(),
                                    "CAGR": f"{cagr:.2%}"})
@@ -444,7 +471,7 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
 
             st.subheader("Annualised Metrics by Look-back Period (as of today)")
             rolling_rows = []
-            for label, sd in start_dates_cagr.items():
+            for label, sd in cagr_windows:
                 simple_ret = subdf["adj close"].loc[sd:end_date].pct_change().dropna()
                 ann_ret = simple_ret.mean() * annualisation_factor
                 vol = simple_ret.std() * np.sqrt(annualisation_factor)
@@ -455,23 +482,21 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
             st.dataframe(pd.DataFrame(rolling_rows), width="stretch", hide_index=True)
 
             st.subheader("Annualised Metrics by Look-back Period (as of last full year-end)")
-            end_date_ly = subdf[subdf.index.year == (subdf.index.max().year - 1)].index.max()
-            start_dates_ly = {
-                "1y": end_date_ly - pd.DateOffset(years=1),
-                "3y": end_date_ly - pd.DateOffset(years=3),
-                "5y": end_date_ly - pd.DateOffset(years=5),
-                f"{full_years}y": end_date_ly - pd.DateOffset(years=full_years),
-            }
-            rolling_ly_rows = []
-            for label, sd in start_dates_ly.items():
-                simple_ret = subdf["adj close"].loc[sd:end_date_ly].pct_change().dropna()
-                ann_ret = simple_ret.mean() * annualisation_factor
-                vol = simple_ret.std() * np.sqrt(annualisation_factor)
-                rolling_ly_rows.append({
-                    "Period": label, "From": sd.date(), "To": end_date_ly.date(),
-                    "Ann. Avg Return": f"{ann_ret:.2%}", "Ann. Volatility": f"{vol:.2%}",
-                })
-            st.dataframe(pd.DataFrame(rolling_ly_rows), width="stretch", hide_index=True)
+            ly_idx = subdf[subdf.index.year == (end_date.year - 1)].index
+            if len(ly_idx) == 0:
+                st.caption("No prior full calendar year of data for this asset — this view is omitted.")
+            else:
+                end_date_ly = ly_idx.max()
+                rolling_ly_rows = []
+                for label, sd in _lookback_year_windows(end_date_ly, data_start):
+                    simple_ret = subdf["adj close"].loc[sd:end_date_ly].pct_change().dropna()
+                    ann_ret = simple_ret.mean() * annualisation_factor
+                    vol = simple_ret.std() * np.sqrt(annualisation_factor)
+                    rolling_ly_rows.append({
+                        "Period": label, "From": sd.date(), "To": end_date_ly.date(),
+                        "Ann. Avg Return": f"{ann_ret:.2%}", "Ann. Volatility": f"{vol:.2%}",
+                    })
+                st.dataframe(pd.DataFrame(rolling_ly_rows), width="stretch", hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────
