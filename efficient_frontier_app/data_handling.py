@@ -184,6 +184,23 @@ def build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date_st
 
 
 @st.cache_data
+def load_asset_series(folder_path, ticker, filename_suffix, filter_date_string):
+    """Date-indexed ``adj close`` Series for one asset over its *own* full history.
+
+    Unlike :func:`build_merged_dataframe` (which inner-joins all tickers to a common
+    window), this loads a single ticker's complete history up to ``filter_date_string``,
+    so per-asset analytics (§2) reflect that asset's actual lifespan rather than the
+    shortest-asset overlap. Reads only the first two columns via ``usecols`` so the
+    extra ``synthetic`` / ``recon_yield`` / ``currency`` columns on ``_EXT`` /
+    downloaded files are ignored.
+    """
+    fp = os.path.join(folder_path, ticker + filename_suffix)
+    df = pd.read_csv(fp, usecols=["date", "adj close"])
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"] <= filter_date_string].sort_values("date")
+    return df.set_index("date")["adj close"]
+
+
 @st.cache_data
 def compute_portfolio_returns_simple(merged_df):
     table = merged_df.set_index("date")

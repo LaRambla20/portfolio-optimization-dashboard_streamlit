@@ -35,7 +35,12 @@ from portfolio_calculations import (
     downside_deviation_series,
     real_deflator,
 )
-from data_handling import evaluate_simple_return, evaluate_CAGR, evaluate_return_metrics
+from data_handling import (
+    evaluate_simple_return,
+    evaluate_CAGR,
+    evaluate_return_metrics,
+    load_asset_series,
+)
 from descriptions import render_section_help
 
 
@@ -344,9 +349,12 @@ def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availabil
 # SECTION 2 — PER-ASSET ANALYTICS
 # ─────────────────────────────────────────────────────────────────
 
-def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
+def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_string,
                               annualisation_factor, real_terms=False, annual_inflation=0.0):
     st.header("2. Per-Asset Analytics")
+    st.caption("Each asset is shown over its **own full history** (up to the date filter), which may "
+               "start earlier than the portfolio's shared window in §1 — so these figures can differ "
+               "from the portfolio sections, by design.")
     if real_terms:
         st.caption(f"📉 **Real terms** — prices deflated by an assumed {annual_inflation:.1%}/yr "
                    "inflation, so returns/CAGR are in today's purchasing power.")
@@ -361,10 +369,10 @@ def render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, f
     real_sfx = " (real)" if real_terms else ""
 
     for ticker in tickers:
-        subdf = merged_df[["date", ticker]].copy().rename(columns={ticker: "adj close"})
-        subdf = subdf.sort_values("date")
-        subdf = subdf[subdf["date"] <= filter_date_string]
-        subdf.set_index("date", inplace=True)
+        # Load this asset's *own* full history (not the inner-joined common window), so "full history"
+        # CAGR/returns/drawdown reflect the asset's actual lifespan. usecols ignores _EXT/currency extras.
+        series = load_asset_series(folder_path, ticker, filename_suffix, filter_date_string)
+        subdf = series.to_frame("adj close")
         # Deflate the price level once; every figure below (simple/calendar returns, CAGR, annualised
         # metrics, cumulative chart, look-back tables) then reads real prices with no further changes.
         if real_terms:

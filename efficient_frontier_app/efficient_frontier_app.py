@@ -480,7 +480,7 @@ if len(merged_df) < window_periods:
 # ─────────────────────────────────────────────────────────
 
 render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability, synthetic_info, currency_info)
-render_per_etf_analytics(merged_df, tickers, folder_path, filename_suffix, filter_date_string,
+render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_string,
                          annualisation_factor, real_terms, annual_inflation)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years)
