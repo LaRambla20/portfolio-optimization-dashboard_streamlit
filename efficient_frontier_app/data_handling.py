@@ -218,7 +218,10 @@ def compute_portfolio_returns_simple(merged_df):
 
 @st.cache_data
 def compute_rolling_returns(merged_df, window_periods):
-    """Rolling simple return for each ticker: price[t]/price[t-window_periods] - 1."""
+    """Rolling **cumulative** simple return for each ticker over the window:
+    ``price[t] / price[t-window_periods] - 1`` — the total return across the whole
+    `window_periods`-row window, **not** annualised (so longer windows yield larger figures and
+    are not comparable across window lengths; see §2 CAGR for a per-year rate)."""
     price_df = merged_df.set_index("date")
     rolling = price_df / price_df.shift(window_periods) - 1
     return rolling.reset_index()

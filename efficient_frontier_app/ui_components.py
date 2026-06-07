@@ -560,18 +560,24 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
         return
 
     # Individual assets (the portfolio rolling-returns chart lives in §6, Input Portfolio Analysis).
-    st.subheader(f"Individual Assets — {rolling_window_years}Y Rolling Returns")
+    st.subheader(f"Individual Assets — Cumulative {rolling_window_years}-Year Return")
     fig, ax = plt.subplots(figsize=(12, 5))
     for ticker in tickers:
         ax.plot(rolling_returns["date"], rolling_returns[ticker], lw=1, label=ticker)
-    ax.set_title(f"Rolling {rolling_window_years}-Year Returns")
+    ax.set_title(f"Cumulative {rolling_window_years}-Year Return")
     ax.set_xlabel("Date")
-    ax.set_ylabel("Rolling Return")
+    ax.set_ylabel(f"Cumulative {rolling_window_years}-Year Return")
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
     ax.legend(title="Asset")
     ax.grid(True)
     st.pyplot(fig)
     plt.close(fig)
+    st.caption(
+        f"Each point is the **total** return over the preceding {rolling_window_years} years "
+        f"(P_t / P_{{t−{rolling_window_years}y}} − 1), not a per-year rate — so a longer window "
+        "naturally shows a bigger figure purely from compounding more years. **Windows of "
+        "different lengths are not directly comparable**; for a per-year figure see the CAGR in §2."
+    )
     st.divider()
 
 
@@ -860,19 +866,25 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
         u2.metric("Longest underwater stretch", "n/a", help="Value never fell below a prior peak.")
 
     # ── Portfolio rolling returns (moved from §4), on the buy-and-hold value ────────────
-    st.subheader(f"Portfolio — {rolling_window_years}Y Rolling Returns (Buy-and-Hold)")
+    st.subheader(f"Portfolio — Cumulative {rolling_window_years}-Year Return (Buy-and-Hold)")
     if len(value) > window_periods:
         roll = (value / value.shift(window_periods) - 1.0).dropna()
         fig_rr, ax_rr = plt.subplots(figsize=(12, 5))
         ax_rr.plot(roll.index, roll.values, lw=1.5, color="black", label="Portfolio")
-        ax_rr.set_title(f"Portfolio Rolling {rolling_window_years}-Year Returns{real_sfx}")
+        ax_rr.set_title(f"Cumulative {rolling_window_years}-Year Return{real_sfx}")
         ax_rr.set_xlabel("Date")
-        ax_rr.set_ylabel(f"Rolling Return{real_sfx}")
+        ax_rr.set_ylabel(f"Cumulative {rolling_window_years}-Year Return{real_sfx}")
         ax_rr.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
         ax_rr.legend()
         ax_rr.grid(True, alpha=0.3)
         st.pyplot(fig_rr)
         plt.close(fig_rr)
+        st.caption(
+            f"Each point is the portfolio's **total** return over the preceding "
+            f"{rolling_window_years} years, not a per-year rate — longer windows show bigger "
+            "figures from compounding more years and aren't comparable across window lengths "
+            "(for a per-year figure see CAGR above)."
+        )
     else:
         st.info(f"Insufficient data for a {rolling_window_years}-year rolling window "
                 f"({len(value)} periods ≤ {window_periods}).")

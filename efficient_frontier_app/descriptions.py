@@ -227,13 +227,18 @@ Rebasing to a common start makes relative performance instantly readable on one 
     "rolling_returns_asset": r"""
 **Rolling returns (per asset)**
 
-*How it's computed:* for every date, the return an investor would have earned over the preceding
-window of length $w$ (selectable: 1, 2, 3, 5, 7 or 10 years):
+*How it's computed:* for every date, the **cumulative total** return an investor would have earned
+over the preceding window of length $w$ (selectable: 1, 2, 3, 5, 7 or 10 years):
 
 $$R_t = \frac{P_t}{P_{t-w}} - 1$$
 
+This is the whole-window total, **not** a per-year rate, so a longer window naturally shows a
+bigger number purely from compounding more years — **windows of different lengths are not directly
+comparable.** For a per-year figure, see the CAGR in §2.
+
 *What it means for you:* instead of one return from a single lucky or unlucky start date, this
-shows the full range of outcomes a holder could have experienced depending on *when* they started.
+shows the full range of *total* outcomes a holder of this window length could have experienced
+depending on *when* they started.
 
 *Why it's useful:* it exposes how much your result depends on timing. A wide, jumpy band means
 outcomes were very start-date-dependent; a tight band means the holding period was reliably
@@ -244,11 +249,14 @@ rewarding.
 **Rolling returns (portfolio)**
 
 *How it's computed:* build your portfolio's buy-and-hold value by holding your chosen mix without
-rebalancing (see *Buy-and-hold basis*), then take the window-over-window return at every date:
+rebalancing (see *Buy-and-hold basis*), then take the **cumulative total** window-over-window
+return at every date:
 
 $$R_t = \frac{V_t}{V_{t-w}} - 1$$
 
-where $V_t$ = portfolio value and $w$ = the window length.
+where $V_t$ = portfolio value and $w$ = the window length. As with the per-asset chart this is the
+whole-window total, **not** a per-year rate, so longer windows show bigger figures and aren't
+comparable across window lengths (see §2 CAGR for a per-year figure).
 
 *What it means for you:* the rolling-window experience of holding *your specific mix* untouched,
 not the individual assets.
