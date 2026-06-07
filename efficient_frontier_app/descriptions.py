@@ -135,6 +135,10 @@ the optimizer and the risk/return chart use. It's an *expected* return, not the 
 
 *Why it's useful:* it pairs cleanly with annual volatility (both scale with the same calendar),
 which is exactly what's needed to compare portfolios and build the efficient frontier.
+
+*Assumption:* the linear $\times N$ scaling assumes per-period returns are **serially uncorrelated**
+(i.i.d.). Real return series have some autocorrelation, so treat the annualised figure as an
+estimate, not an exact forecast.
 """,
 
     "annual_volatility": r"""
@@ -153,6 +157,10 @@ typical year's return lands roughly within ±12% of the average — bigger numbe
 
 *Why it's useful:* it's the standard measure of risk in portfolio theory and the denominator of
 the Sharpe ratio. Lower volatility for the same return means a smoother, more predictable journey.
+
+*Assumption:* the $\sqrt{N}$ rule assumes per-period returns are **serially uncorrelated** (i.i.d.).
+Positive autocorrelation (trending) makes true annual volatility *higher* than $\sigma\sqrt{N}$,
+while mean-reversion makes it *lower* — so the annualised figure is an approximation.
 """,
 
     "max_drawdown": r"""
@@ -321,6 +329,11 @@ negative value means one tends to zig when the other zags.
 *Why it's useful:* it's the mathematical engine of diversification. The optimizer uses this matrix
 to find mixes whose combined swings partly cancel out — lowering risk without necessarily
 lowering return.
+
+*Caveat:* for a basket mixing 7-day assets (crypto) with ~5-day assets (equity ETFs), this matrix
+is computed on the shared-date (inner-join) calendar — the 7-day asset's weekend moves fold into
+the next shared day — so the covariance (and the frontier/VaR built on it) is **approximate**.
+Prefer weekly or monthly data for cleaner mixed-calendar figures.
 """,
 
     "correlation": r"""
@@ -336,7 +349,8 @@ they move exactly opposite. The heatmap shows this at a glance.
 
 *Why it's useful:* combining assets with low or negative correlation is the single most powerful
 way to cut portfolio risk. Two strong-but-uncorrelated assets make a much smoother portfolio than
-either alone.
+either alone. (Same mixed-calendar caveat as the covariance matrix above: correlations between
+7-day and ~5-day assets are approximate on daily data — prefer weekly/monthly.)
 """,
 
     # ── §6 — Input Portfolio Analysis ────────────────────────────────────────

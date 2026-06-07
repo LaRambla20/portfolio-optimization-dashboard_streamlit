@@ -132,6 +132,22 @@ def display_portfolio_cards(portfolios, alpha):
                     plt.close(fig_pie)
 
 
+def _mixed_calendar_note(mixed_calendar, seven_day_tickers):
+    """Caveat shown wherever the covariance/correlation (or the frontier/VaR built on it) is used,
+    when the basket mixes 7-day (crypto) and ~5-day (equity) assets. The inner-join keeps only
+    shared dates, folding the 7-day asset's weekend moves into the next shared day, so those figures
+    are calendar-approximate. Detection comes from `compute_data_availability`; no-op otherwise."""
+    if not mixed_calendar:
+        return
+    seven = ", ".join(f"**{t}**" for t in (seven_day_tickers or []))
+    st.caption(
+        f"📅 Mixed-calendar caveat: {seven} trade 7 days a week while the other assets trade ~5, so "
+        "the covariance/correlation here — and the frontier/VaR built on it — are calendar-approximate "
+        "(weekend moves fold into the next shared day). Switch the data period to weekly or monthly "
+        "for cleaner figures."
+    )
+
+
 # ─────────────────────────────────────────────────────────────────
 # SECTION 1 — LOAD DATA (split detection + anomaly warnings + data availability)
 # ─────────────────────────────────────────────────────────────────
@@ -588,7 +604,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
 
 def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                                portfolio_cov_matrix, tickers, annualisation_factor,
-                               risk_free_rate):
+                               risk_free_rate, mixed_calendar=False, seven_day_tickers=None):
     st.header("5. Per-Asset Returns & Statistics")
     render_section_help(
         "This section measures how rewarding and how risky your assets have been, and crucially "
@@ -643,6 +659,7 @@ def render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
     st.subheader("Correlation Matrix (used for optimization — simple returns)")
     st.dataframe(portfolio_returns_simple.corr(), width="stretch")
     st.caption("The correlation heatmap is shown in §6, Input Portfolio Analysis.")
+    _mixed_calendar_note(mixed_calendar, seven_day_tickers)
 
     fig_ret, ax_ret = plt.subplots(figsize=(12, 5))
     for c in portfolio_returns_simple.columns.values:
@@ -670,7 +687,8 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
                                     my_portfolio_allocation, annualisation_factor,
                                     risk_free_rate, alpha, window_periods, rolling_window_years,
                                     rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)",
-                                    real_terms=False, annual_inflation=0.0):
+                                    real_terms=False, annual_inflation=0.0,
+                                    mixed_calendar=False, seven_day_tickers=None):
     st.header("6. Input Portfolio Analysis")
     st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar).")
     if real_terms:
@@ -899,6 +917,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     ax_corr.set_title("Asset Correlation Matrix (simple returns)")
     st.pyplot(fig_corr)
     plt.close(fig_corr)
+    _mixed_calendar_note(mixed_calendar, seven_day_tickers)
 
     # ── Tail risk & return distribution (merged from the former standalone VaR section) ──
     render_tail_risk(bh_ret, alpha)
@@ -913,11 +932,12 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
 def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                         tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                         custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha,
-                        real_terms=False):
+                        real_terms=False, mixed_calendar=False, seven_day_tickers=None):
     st.header("7. Monte Carlo Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
                "sidebar Rebalancing-frequency setting (which governs §6).")
+    _mixed_calendar_note(mixed_calendar, seven_day_tickers)
     if real_terms:
         st.caption("💶 Shown in **nominal** terms despite the real-returns setting: a constant inflation "
                    "rate leaves the efficient-frontier *weights* unchanged (the real risk premium is "
@@ -1082,11 +1102,13 @@ def render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfol
 def render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                      tickers, annualisation_factor, risk_free_rate, num_portfolios,
                      num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                     my_portfolio_allocation, alpha, real_terms=False):
+                     my_portfolio_allocation, alpha, real_terms=False,
+                     mixed_calendar=False, seven_day_tickers=None):
     st.header("8. Scipy Efficient Frontier Portfolio Optimization")
     st.caption("⚖️ Rebalancing: **per period** — the frontier and all return/volatility figures here "
                "assume per-period rebalancing (the basis MPT optimization requires), independent of the "
                "sidebar Rebalancing-frequency setting (which governs §6).")
+    _mixed_calendar_note(mixed_calendar, seven_day_tickers)
     if real_terms:
         st.caption("💶 Shown in **nominal** terms despite the real-returns setting: a constant inflation "
                    "rate leaves the efficient-frontier *weights* unchanged (the real risk premium is "

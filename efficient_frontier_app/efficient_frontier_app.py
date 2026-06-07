@@ -484,22 +484,29 @@ render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_stri
                          annualisation_factor, real_terms, annual_inflation)
 render_etf_prices(merged_df, tickers)
 render_rolling_returns(rolling_returns, tickers, rolling_window_years)
+# Mixed-calendar flag (some 7-day crypto + some ~5-day equity) → covariance/correlation, and the
+# frontier/VaR built on them, are calendar-approximate. Surface the §1 caveat at the point of use.
+mixed_calendar = data_availability["mixed_calendar"]
+seven_day_tickers = data_availability["seven_day_tickers"]
+
 render_returns_statistics(portfolio_returns_simple, portfolio_mean_returns,
                            portfolio_cov_matrix, tickers, annualisation_factor,
-                           risk_free_rate)
+                           risk_free_rate, mixed_calendar, seven_day_tickers)
 render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                 my_portfolio_allocation, annualisation_factor, risk_free_rate,
                                 alpha, window_periods, rolling_window_years,
                                 rebalance_every_periods, rebalance_label,
-                                real_terms, annual_inflation)
+                                real_terms, annual_inflation,
+                                mixed_calendar, seven_day_tickers)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                     custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha,
-                    real_terms)
+                    real_terms, mixed_calendar, seven_day_tickers)
 render_scipy_ef(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                   tickers, annualisation_factor, risk_free_rate, num_portfolios,
                   num_eff_portfolios, eps, custom_target_ret, custom_target_vol,
-                  my_portfolio_allocation, alpha, real_terms)
+                  my_portfolio_allocation, alpha, real_terms,
+                  mixed_calendar, seven_day_tickers)
 
 # End-of-pipeline signal (every section above has rendered). Also the e2e test's "done" marker.
 st.success(" Analysis complete!")
