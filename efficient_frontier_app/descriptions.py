@@ -517,15 +517,13 @@ volatility of your portfolio, which together produce the Value at Risk figure be
 **Parametric Value at Risk (VaR)**
 
 *How it's computed:* assuming returns follow a bell curve, VaR scales volatility by the z-score to
-mark the loss at the edge of your confidence level. The per-period figures keep the (tiny) expected
-return:
+mark the loss at the edge of your confidence level, keeping the (tiny per-period) expected return:
 
 $$\text{VaR}_\alpha = \sigma\,|z| - \mu$$
 
-while the **annual** VaR on the frontier and cards uses the conservative *drift-free* form
-$\text{VaR}^{\text{ann}}_\alpha = \sigma_{\text{ann}}\,|z|$ — dropping $\mu$ so it can't turn negative
-over long horizons and is simply proportional to volatility. Here $\sigma$ = volatility, $\mu$ =
-average return, $|z|$ = size of the z-score.
+Here $\sigma$ = volatility, $\mu$ = average return, $|z|$ = size of the z-score. Keeping $\mu$ (rather
+than dropping it for a "drift-free" $\sigma|z|$) puts this figure on the **same basis as the historical
+VaR/CVaR** shown beside it, so the comparison isolates tail *shape*, not a difference in convention.
 
 *What it means for you:* "with 95% confidence, I won't lose more than X over this period." A 95%
 VaR of 5% means only about 1 period in 20 should be worse than a 5% loss.
@@ -587,7 +585,8 @@ actually buy — rather than headline euros. A 6% nominal return with 2% inflati
 *Why it's useful — and what it does* ***not*** *change:* subtracting a **constant** rate shifts
 every return down by about $\pi$, so **CAGR and average return drop** and **drawdowns deepen and
 last longer** (flat nominal value is a real loss). But a constant offset can't change the *spread*
-of returns, so **volatility, correlations and the parametric `σ·z` VaR are ~unchanged**, and
+of returns, so **volatility and correlations are unchanged** (the parametric VaR's volatility term is
+too; only its small per-period drift term shifts), and
 because the risk premium $r^{\text{real}}-r_f^{\text{real}}\approx r^{\text{nom}}-r_f^{\text{nom}}$
 is inflation-invariant, **Sharpe, Sortino and the §7/§8 efficient-frontier weights don't move** —
 which is exactly why the optimization sections stay nominal.

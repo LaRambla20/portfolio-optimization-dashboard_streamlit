@@ -60,7 +60,7 @@ def collect_portfolio_info(name, weights, mean_returns, cov_matrix, risk_free_ra
     mdd     = max_drawdown(port_returns)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
-            "sortino": sortino, "alloc": alloc, "var": None,
+            "sortino": sortino, "alloc": alloc,
             "max_dd": mdd, "port_returns": port_returns}
 
 
@@ -78,7 +78,7 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
     mdd     = max_drawdown(port_returns)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
     return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
-            "sortino": sortino, "alloc": alloc, "var": None,
+            "sortino": sortino, "alloc": alloc,
             "max_dd": mdd, "port_returns": port_returns}
 
 
@@ -115,14 +115,6 @@ def display_portfolio_cards(portfolios, alpha):
                      "sits on a shorter horizon than the annual return and volatility above. "
                      "Computed on a constant-weight (per-period-rebalanced) portfolio.",
             )
-            if p.get("var") is not None:
-                st.metric(
-                    "Value at Risk (annual)",
-                    f"{p['var']:.2%}",
-                    help="Parametric 1-year Value at Risk (σ·z) at the chosen confidence level, assuming "
-                         "normal returns. Drift-free (ignores expected return), so it can't go negative and "
-                         "is proportional to volatility.",
-                )
             alloc_series = p["alloc"].iloc[0]
             left, right  = st.columns([1, 1])
             with left:

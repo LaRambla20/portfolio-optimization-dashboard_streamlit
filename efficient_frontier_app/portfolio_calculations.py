@@ -230,17 +230,6 @@ def make_allocation_df(weights, tickers):
     return alloc.T
 
 
-def portfolio_info_dict(name, std_dev, ret, sharpe, alloc_df, var=None):
-    d = {
-        "Portfolio": name,
-        "Ann. Return": f"{ret:.2%}",
-        "Ann. Volatility": f"{std_dev:.2%}",
-        "Sharpe Ratio": f"{sharpe:.3f}",
-    }
-    if var is not None:
-        d["Value at Risk"] = f"{var:.2%}"
-    return d, alloc_df
-
 # ─────────────────────────────────────────────────────────────────
 # REBALANCED PORTFOLIO VALUE SERIES (Input Portfolio Analysis §6, incl. its tail-risk subsection)
 # ─────────────────────────────────────────────────────────────────
