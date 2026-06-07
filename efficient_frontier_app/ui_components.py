@@ -48,6 +48,19 @@ from descriptions import render_section_help
 # SHARED HELPERS
 # ─────────────────────────────────────────────────────────────────
 
+def _geometric_annual_return(port_returns, annualisation_factor):
+    """Geometric (compound) annual return of a per-period return series:
+    ``(∏(1+r))^(N/n) − 1``. This is what compounding actually delivers — it sits ~σ²/2 below the
+    arithmetic ``mean × N`` (volatility drag). NaN when the series is empty or wealth goes ≤ 0."""
+    n = len(port_returns)
+    if n == 0:
+        return np.nan
+    cum = float((1.0 + port_returns).prod())
+    if cum <= 0:
+        return np.nan
+    return cum ** (annualisation_factor / n) - 1.0
+
+
 def collect_portfolio_info(name, weights, mean_returns, cov_matrix, risk_free_rate,
                            portfolio_returns_simple, tickers, annualisation_factor,
                            ax, marker, color, size):
@@ -58,8 +71,9 @@ def collect_portfolio_info(name, weights, mean_returns, cov_matrix, risk_free_ra
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
+    geo_ret = _geometric_annual_return(port_returns, annualisation_factor)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
-    return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
+    return {"name": name, "std_dev": std_dev, "ret": ret, "geo_ret": geo_ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc,
             "max_dd": mdd, "port_returns": port_returns}
 
@@ -76,8 +90,9 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
     alloc   = make_allocation_df(weights, tickers)
     port_returns = portfolio_returns_simple.dot(weights)
     mdd     = max_drawdown(port_returns)
+    geo_ret = _geometric_annual_return(port_returns, annualisation_factor)
     ax.scatter(std_dev, ret, marker=marker, color=color, s=size, label=name, zorder=5)
-    return {"name": name, "std_dev": std_dev, "ret": ret, "sharpe": sharpe,
+    return {"name": name, "std_dev": std_dev, "ret": ret, "geo_ret": geo_ret, "sharpe": sharpe,
             "sortino": sortino, "alloc": alloc,
             "max_dd": mdd, "port_returns": port_returns}
 
@@ -85,18 +100,34 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
 def display_portfolio_cards(portfolios, alpha):
     for p in portfolios:
         with st.expander(f"{p['name']}", expanded=False):
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric(
+            # Row 1: the two return figures together (arithmetic = optimizer input vs geometric =
+            # realized), then volatility and Sharpe.
+            r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+            r1c1.metric(
                 "Average annual return",
                 f"{p['ret']:.2%}",
-                help="Average return per year, estimated from per-period returns — the same figure "
-                     "used on the efficient-frontier chart and to compare portfolios.",
+                help="Arithmetic mean of per-period returns × N — the *expected* return used as the "
+                     "efficient-frontier axis and to rank portfolios. The realized compound growth (CAGR, "
+                     "beside it) differs: volatility drag lowers it (≈σ²/2) while intra-period compounding "
+                     "raises it, so for volatile portfolios CAGR is usually the lower of the two.",
             )
-            c2.metric("Ann. Volatility", f"{p['std_dev']:.2%}")
-            c3.metric("Sharpe Ratio",  f"{p['sharpe']:.3f}")
+            geo_val = p.get("geo_ret")
+            r1c2.metric(
+                "Compound return (CAGR)",
+                f"{geo_val:.2%}" if geo_val is not None and not np.isnan(geo_val) else "n/a",
+                help="Geometric annual growth of this portfolio's return series — (∏(1+r))^(N/n) − 1 — "
+                     "what compounding actually delivers. Differs from the arithmetic figure beside it "
+                     "(volatility drag down ≈σ²/2 vs intra-period compounding up). Constant-weight "
+                     "(per-period-rebalanced) basis, like the other card metrics.",
+            )
+            r1c3.metric("Ann. Volatility", f"{p['std_dev']:.2%}")
+            r1c4.metric("Sharpe Ratio",  f"{p['sharpe']:.3f}")
+
+            # Row 2: risk-adjusted + downside metrics.
+            r2c1, r2c2, r2c3 = st.columns(3)
             sortino_val = p.get("sortino")
-            c4.metric("Sortino Ratio", f"{sortino_val:.3f}" if sortino_val is not None and not np.isnan(sortino_val) else "n/a")
-            c5.metric(
+            r2c1.metric("Sortino Ratio", f"{sortino_val:.3f}" if sortino_val is not None and not np.isnan(sortino_val) else "n/a")
+            r2c2.metric(
                 "Max Drawdown",
                 f"{p.get('max_dd', 0):.2%}",
                 help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
@@ -107,7 +138,7 @@ def display_portfolio_cards(portfolios, alpha):
             # own return series (single CVaR definition / sign across the whole app: positive = loss).
             port_returns = p.get("port_returns")
             cvar_val = cvar(port_returns, 1 - alpha) if port_returns is not None else 0.0
-            c6.metric(
+            r2c3.metric(
                 f"CVaR ({alpha:.0%})",
                 f"{cvar_val:.2%}",
                 help="Expected shortfall: the average loss on the worst (1−confidence) slice of "
@@ -468,8 +499,10 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
             col1.metric(
                 "Average annual return",
                 f"{ann_mean:.2%}",
-                help="Average return per year, estimated from per-period returns — the same figure "
-                     "used on the efficient-frontier chart and to compare portfolios.",
+                help="Arithmetic mean of per-period returns × N — the *expected* return used on the "
+                     "efficient-frontier chart and to compare portfolios. The realized compound growth "
+                     "differs (volatility drag lowers it ≈σ²/2, intra-period compounding raises it); for "
+                     "that, see the CAGR table just above.",
             )
             col2.metric("Annualised Volatility", f"{ann_std:.2%}")
             col3.metric("Max Drawdown", f"{mdd:.2%}")

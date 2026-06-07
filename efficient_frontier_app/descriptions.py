@@ -131,7 +131,10 @@ where $\bar{r}$ = average periodic return and $N$ = periods per year (252 daily,
 monthly).
 
 *What it means for you:* a forward-looking estimate of the typical yearly return, in the form
-the optimizer and the risk/return chart use. It's an *expected* return, not the realized CAGR.
+the optimizer and the risk/return chart use. It's an *expected* return, not the realized CAGR: the
+two differ because volatility drag pulls CAGR down (≈ $\sigma^2/2$) while intra-period compounding
+pulls it up, so for volatile portfolios CAGR is usually the lower of the two. Don't read this
+figure as the growth you'd actually compound.
 
 *Why it's useful:* it pairs cleanly with annual volatility (both scale with the same calendar),
 which is exactly what's needed to compare portfolios and build the efficient frontier.
