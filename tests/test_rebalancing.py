@@ -5,14 +5,15 @@ Deterministic, no network. Pins the two equivalences the feature relies on
 (Never == buy-and-hold, Every period == constant-weight compounded) plus a
 hand-checked periodic-rebalance case verifying the reset and continuity.
 
-Run:  .venv\\Scripts\\python test_rebalancing.py
+Run:  .venv\\Scripts\\python tests\\test_rebalancing.py
 """
 
+import os
 import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "efficient_frontier_app")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))
 from portfolio_calculations import (  # noqa: E402
     rebalanced_value_series,
     buy_and_hold_value_series,

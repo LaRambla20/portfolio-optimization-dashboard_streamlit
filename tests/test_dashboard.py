@@ -1,15 +1,18 @@
 """
 Playwright test for the Efficient Frontier dashboard.
-Run with: .venv/Scripts/python test_dashboard.py
+Run with: .venv/Scripts/python tests/test_dashboard.py
 Requires the Streamlit app to be running on localhost:8501.
-Screenshots are saved to test_screenshots/.
+Screenshots are saved to test_screenshots/ at the repo root.
 """
 
 import os
 from playwright.sync_api import sync_playwright, expect
 
 BASE_URL = "http://localhost:8501"
-SCREENSHOT_DIR = "test_screenshots"
+# Anchor to the repo root (parent of tests/) so screenshots land at the existing
+# gitignored location regardless of the current working directory.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCREENSHOT_DIR = os.path.join(_REPO_ROOT, "test_screenshots")
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 # Set HEADLESS=1 for automated/CI runs (no visible window, more reliable);

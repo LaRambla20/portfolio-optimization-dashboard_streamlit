@@ -25,10 +25,10 @@ python -m venv .venv
 **Requires the app to be running first** (`Run app` command above), then:
 
 ```bash
-.venv\Scripts\python test_dashboard.py
+.venv\Scripts\python tests\test_dashboard.py
 ```
 
-For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python test_dashboard.py` (plain `headless=False` hangs when not driven by a human).
+For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python tests\test_dashboard.py` (plain `headless=False` hangs when not driven by a human).
 
 > **Gotcha:** Streamlit caches imported modules in memory, so a still-running `streamlit.exe` serves **stale code** after you edit `ui_components.py`/etc. After edits, kill all `streamlit.exe`, confirm port 8501 has no LISTENING socket, then restart before re-testing.
 
@@ -36,9 +36,9 @@ Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all
 
 > **Gotcha:** the test's "done" signal is `st.success(" Analysis complete!")`, rendered **last** in `efficient_frontier_app.py` after the final section. Remove or relocate it (e.g. when merging/reordering sections) and `test_dashboard.py` hangs 180s then fails on `wait_for_selector("text=Analysis complete")` — keep it as the final render. The test's `SECTIONS` list must also match the rendered `st.header` strings exactly (incl. the section count).
 
-**Unit tests (no running app, no network needed):** `.venv\Scripts\python test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv\Scripts\python test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity). `.venv\Scripts\python test_real_terms.py` covers `real_deflator`/`to_real` (0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns — the invariances the real-terms toggle relies on).
+**Unit tests (no running app, no network needed) — all live in `tests/`:** `.venv\Scripts\python tests\test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv\Scripts\python tests\test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity). `.venv\Scripts\python tests\test_real_terms.py` covers `real_deflator`/`to_real` (0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns). `.venv\Scripts\python tests\test_lookback_windows.py` covers the §2 per-asset look-back machinery — `evaluate_simple_return`/`evaluate_CAGR` empty/zero-span guards, `load_asset_series` (own-history + `usecols` ignores `_EXT`/currency extras), `_lookback_year_windows` (drops windows longer than history, keeps fitting ones + a true `Full` row), `_full_history_label` (formatting + 12-month rollover). `.venv\Scripts\python tests\test_geometric_return.py` covers `_geometric_annual_return` (zero-vol → geo above arithmetic via intra-period compounding; high-vol → geo below by ≈σ²/2 drag; NaN guards).
 
-> **Adding a unit test:** plain assert-based script — `sys.path.insert(0, "efficient_frontier_app")`, functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv\Scripts\python test_X.py`.
+> **Adding a unit test:** put it in `tests/`. Plain assert-based script — anchor the import path to the file (`sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))`, so it runs from any CWD), functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv\Scripts\python tests\test_X.py`.
 
 > **yfinance SSL gotcha:** yfinance uses `curl_cffi`, so the pip `--trusted-host` and git `schannel` workarounds do **not** apply to it. The app's `run_download`/`run_total_return_reconstruction` use a bare `yf.Ticker` (fine on the real machine). To drive yfinance for local validation on an SSL-intercepting machine, pass a relaxed session: `yf.Ticker(sym, session=curl_cffi.requests.Session(impersonate="chrome", verify=False))`.
 
@@ -135,7 +135,7 @@ Accumulating ETFs (VWCE, EM57, …) only span a few years; the **price-return** 
 
 Add the new `{ETF}_EXT` ticker to **My Portfolio** to analyze it. §1 shows a 🧬 caption flagging which rows are reconstructed (estimate, not measured).
 
-**The index must track the same underlying as the ETF** (e.g. `^GSPC` with an S&P 500 ETF). The calibration makes the index match the ETF over the overlap, so pairing mismatched underlyings (S&P 500 vs FTSE All-World) folds their *performance gap* into `q_hat` — `^GSPC`→`VWCE.MI` yields a nonsensical **−1.2%/yr** because US stocks outran the world 2020–2025. The runner emits a `⚠️` log line when `q_hat` lands outside ~0–6%/yr (also catches data quirks: splits, wrong FX, distributing-vs-accumulating share classes — e.g. `SXR8.DE` returned an implausibly low +0.1%). Tests: `test_total_return_synthesis.py` (deterministic math/splice/FX + save/read round-trip, plus a live `^GSPC` vs `^SP500TR` check that recovers q≈1.9%). Note: the live test fetches via a `curl_cffi` session with `verify=False` to bypass this machine's SSL interception — `run_total_return_reconstruction` itself uses a bare `yf.Ticker` like `run_download`, matching existing behavior.
+**The index must track the same underlying as the ETF** (e.g. `^GSPC` with an S&P 500 ETF). The calibration makes the index match the ETF over the overlap, so pairing mismatched underlyings (S&P 500 vs FTSE All-World) folds their *performance gap* into `q_hat` — `^GSPC`→`VWCE.MI` yields a nonsensical **−1.2%/yr** because US stocks outran the world 2020–2025. The runner emits a `⚠️` log line when `q_hat` lands outside ~0–6%/yr (also catches data quirks: splits, wrong FX, distributing-vs-accumulating share classes — e.g. `SXR8.DE` returned an implausibly low +0.1%). Tests: `tests/test_total_return_synthesis.py` (deterministic math/splice/FX + save/read round-trip, plus a live `^GSPC` vs `^SP500TR` check that recovers q≈1.9%). Note: the live test fetches via a `curl_cffi` session with `verify=False` to bypass this machine's SSL interception — `run_total_return_reconstruction` itself uses a bare `yf.Ticker` like `run_download`, matching existing behavior.
 
 ### Data Format
 

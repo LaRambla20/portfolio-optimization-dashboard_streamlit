@@ -7,14 +7,15 @@ price index (^GSPC) and its total-return counterpart (^SP500TR) and checks the
 recovered yield lands in the realistic dividend-yield band (~1.8-2.0%); it SKIPs
 (does not fail) if the network/SSL is unavailable.
 
-Run:  .venv\\Scripts\\python test_total_return_synthesis.py
+Run:  .venv\\Scripts\\python tests\\test_total_return_synthesis.py
 """
 
+import os
 import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "efficient_frontier_app")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))
 from data_handling import (  # noqa: E402
     synthesize_total_return,
     build_reconstructed_frame,

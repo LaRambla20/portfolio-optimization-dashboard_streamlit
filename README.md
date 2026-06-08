@@ -50,7 +50,7 @@ python -m venv .venv
 A Playwright end-to-end test drives the full dashboard in a real browser. Start the app first, then run:
 
 ```bash
-.venv\Scripts\python test_dashboard.py
+.venv\Scripts\python tests\test_dashboard.py
 ```
 
 This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
@@ -58,15 +58,17 @@ This clicks **Run Analysis**, waits for all computations to finish, verifies all
 For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 
 ```bash
-HEADLESS=1 .venv\Scripts\python test_dashboard.py
+HEADLESS=1 .venv\Scripts\python tests\test_dashboard.py
 ```
 
-Unit tests run standalone (no app or network required) — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), and the inflation deflator behind the real-terms toggle (constant-rate deflation shifts means but leaves volatility unchanged and deepens drawdowns):
+Unit tests run standalone (no app or network required) and live in `tests/` — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), the inflation deflator behind the real-terms toggle, the §2 per-asset look-back machinery (look-back window selection, own-history loader, simple-return/CAGR guards), and the compound-CAGR card figure:
 
 ```bash
-.venv\Scripts\python test_total_return_synthesis.py
-.venv\Scripts\python test_rebalancing.py
-.venv\Scripts\python test_real_terms.py
+.venv\Scripts\python tests\test_total_return_synthesis.py
+.venv\Scripts\python tests\test_rebalancing.py
+.venv\Scripts\python tests\test_real_terms.py
+.venv\Scripts\python tests\test_lookback_windows.py
+.venv\Scripts\python tests\test_geometric_return.py
 ```
 
 ## Project Structure
@@ -80,6 +82,7 @@ efficient_frontier_app/
 └── descriptions.py             # Per-section "How to read this section" guides
 
 individual_indices_data/        # Asset price CSVs (pre-loaded samples included; downloader writes here)
+tests/                          # Playwright e2e (test_dashboard.py) + standalone unit tests
 ```
 
 ## Data Format

@@ -5,14 +5,15 @@ Deterministic, no network. Pins the properties the inflation feature relies on:
 toggle-off is an exact no-op, a constant rate shifts mean returns down by ~pi while
 leaving volatility ~unchanged, and real drawdowns are at least as deep as nominal.
 
-Run:  .venv\\Scripts\\python test_real_terms.py
+Run:  .venv\\Scripts\\python tests\\test_real_terms.py
 """
 
+import os
 import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "efficient_frontier_app")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))
 from portfolio_calculations import real_deflator, to_real, max_drawdown  # noqa: E402
 
 
