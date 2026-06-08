@@ -441,6 +441,10 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
         # CAGR/returns/drawdown reflect the asset's actual lifespan. usecols ignores _EXT/currency extras.
         series = load_asset_series(folder_path, ticker, filename_suffix, filter_date_string)
         subdf = series.to_frame("adj close")
+        if subdf.empty:  # empty CSV / fully excluded by the date filter → skip gracefully
+            with st.expander(f"{ticker}", expanded=False):
+                st.caption("No data available for this asset in the selected window.")
+            continue
         # Deflate the price level once; every figure below (simple/calendar returns, CAGR, annualised
         # metrics, cumulative chart, look-back tables) then reads real prices with no further changes.
         if real_terms:
@@ -452,6 +456,8 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
 
             # Look-back windows that fully fit this asset's history (+ a true full-history row);
             # windows longer than its life are omitted, not silently truncated and mislabelled.
+            # Computed once and reused by the simple-return, CAGR and annualised-metrics tables.
+            year_windows = _lookback_year_windows(end_date, data_start)
             simple_windows = []
             ytd_idx = subdf[subdf.index.year == (end_date.year - 1)].index
             if len(ytd_idx):
@@ -462,7 +468,7 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
                 sd = end_date - off
                 if sd >= data_start:
                     simple_windows.append((lbl, sd))
-            simple_windows += _lookback_year_windows(end_date, data_start)
+            simple_windows += year_windows
 
             simple_rows = []
             for label, sd in simple_windows:
@@ -488,9 +494,8 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
             if yearly_rows:
                 st.dataframe(pd.DataFrame(yearly_rows), width="stretch", hide_index=True)
 
-            cagr_windows = _lookback_year_windows(end_date, data_start)
             cagr_rows = []
-            for label, sd in cagr_windows:
+            for label, sd in year_windows:
                 cagr = evaluate_CAGR(subdf["adj close"], sd, end_date)
                 cagr_rows.append({"Period": label, "From": sd.date(), "To": end_date.date(),
                                    "CAGR": f"{cagr:.2%}"})
@@ -527,7 +532,7 @@ def render_per_etf_analytics(tickers, folder_path, filename_suffix, filter_date_
 
             st.subheader("Annualised Metrics by Look-back Period (as of today)")
             rolling_rows = []
-            for label, sd in cagr_windows:
+            for label, sd in year_windows:
                 simple_ret = subdf["adj close"].loc[sd:end_date].pct_change().dropna()
                 ann_ret = simple_ret.mean() * annualisation_factor
                 vol = simple_ret.std() * np.sqrt(annualisation_factor)
@@ -630,7 +635,7 @@ def render_rolling_returns(rolling_returns, tickers, rolling_window_years):
     plt.close(fig)
     st.caption(
         f"Each point is the **total** return over the preceding {rolling_window_years} years "
-        f"(P_t / P_{{t−{rolling_window_years}y}} − 1), not a per-year rate — so a longer window "
+        f"(`P_t / P_{{t−{rolling_window_years}y}} − 1`), not a per-year rate — so a longer window "
         "naturally shows a bigger figure purely from compounding more years. **Windows of "
         "different lengths are not directly comparable**; for a per-year figure see the CAGR in §2."
     )
