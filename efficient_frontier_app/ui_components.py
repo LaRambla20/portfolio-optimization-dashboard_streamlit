@@ -98,6 +98,13 @@ def collect_portfolio_info_mtc(name, index, results, weights_list, mean_returns,
 
 
 def display_portfolio_cards(portfolios, alpha):
+    st.caption(
+        "ℹ️ **Max Drawdown** and **CVaR** on these cards use a **per-period-rebalanced** "
+        "(constant-weight) basis — the basis these optimization sections require. Frequent "
+        "rebalancing damps drawdowns, so a **buy-and-hold** investor's drawdown is usually "
+        "**larger** than the figure here; for your allocation at the sidebar cadence (default "
+        "buy-and-hold) see §6."
+    )
     for p in portfolios:
         with st.expander(f"{p['name']}", expanded=False):
             # Row 1: the two return figures together (arithmetic = optimizer input vs geometric =
@@ -131,8 +138,8 @@ def display_portfolio_cards(portfolios, alpha):
                 "Max Drawdown",
                 f"{p.get('max_dd', 0):.2%}",
                 help="Worst peak-to-trough fall over the full history shown — a cumulative figure, "
-                     "not annualised. Assumes constant weights (per-period rebalancing), not buy-and-hold. "
-                     "For a less-frequent cadence see §6.",
+                     "not annualised. Assumes constant weights (per-period rebalancing); a buy-and-hold "
+                     "investor's drawdown is usually larger. For a less-frequent cadence see §6.",
             )
             # CVaR computed once here, at the user's chosen confidence level, from the portfolio's
             # own return series (single CVaR definition / sign across the whole app: positive = loss).

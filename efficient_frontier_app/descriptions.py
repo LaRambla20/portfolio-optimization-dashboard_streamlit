@@ -183,7 +183,9 @@ the worst possible moment and held through the bottom — the gut-check of "how 
 downs. Max drawdown captures the deepest hole you'd have had to sit through, which is often what
 decides whether someone can stick with a strategy. (For a portfolio the basis — rebalanced to
 target weights each period, or buy-and-hold that drifts — is stated in each section, and the two
-can behave differently.)
+can behave differently: frequent rebalancing trims winners before they fall, so it generally
+*dampens* drawdowns, making the buy-and-hold figure the larger, more conservative one. The §7/§8
+cards use the per-period-rebalanced basis; §6 uses your sidebar cadence, buy-and-hold by default.)
 """,
 
     "cumulative_return": r"""
