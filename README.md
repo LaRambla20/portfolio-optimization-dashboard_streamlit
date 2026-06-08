@@ -6,17 +6,18 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 
 - **Input portfolio analysis** — your allocation held at a **selectable rebalancing cadence** (buy-and-hold by default): allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, headline growth/drawdown metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown), and a **Tail Risk & Return Distribution** subsection (parametric + historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram)
 - **Selectable rebalancing frequency** — choose how often your portfolio resets to target weights (Never / Every 6 months / Yearly / Every period). Governs the Input Portfolio section (§6, including its tail-risk subsection), which follows your cadence; the efficient-frontier sections stay per-period (the basis MPT optimization requires). Each affected section states its rebalancing basis up top
-- **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP)
+- **Efficient Frontier** — Monte Carlo simulation (uniform-simplex sampling) and SciPy optimization (SLSQP); each highlighted portfolio's card shows both its arithmetic (optimizer-input) and compound (CAGR) return alongside volatility, Sharpe, Sortino, Max Drawdown and CVaR
 - **Risk metrics** — Sharpe & Sortino ratios, Max Drawdown, and both parametric (normal) and historical VaR/CVaR with fat-tail (skew/kurtosis) diagnostics
-- **Per-asset analytics** — CAGR, simple/calendar-year returns, look-back-period metrics, cumulative-return charts
+- **Per-asset analytics** — CAGR, simple/calendar-year returns, look-back-period metrics (only windows that fully fit each asset's history) and cumulative-return charts, each computed over the asset's **own full history** (not the shorter window all the assets share)
 - **Simple returns throughout** — one consistent return definition (actual realised % change) across every section and all optimization, so there's no return-type toggle to reason about
 - **Real (inflation-adjusted) terms** *(optional)* — a sidebar toggle deflates the performance sections (§2 Per-Asset Analytics and §6 Input Portfolio, including its tail risk) by an assumed constant annual inflation rate you set, so figures read in today's purchasing power. A constant rate lowers CAGR/average returns and deepens drawdowns, but **leaves volatility, correlations and the efficient-frontier weights unchanged** (the real risk premium is inflation-invariant) — so the §7/§8 optimization sections stay nominal and say so
-- **Rolling returns** — 1/2/3/5/7/10-year moving windows for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
+- **Rolling returns** — **cumulative** 1/2/3/5/7/10-year moving-window returns (whole-window totals, *not* annualised, so windows of different lengths aren't directly comparable) for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
 - **Total-return reconstruction** — extend a short-lived accumulating ETF backward with the longer **price-return** index it tracks: the missing dividend yield is calibrated from the ETF overlap, the older history is grossed up and spliced on, and reconstructed rows are flagged in section 1
 - **Data-quality checks** — section 1 reports any **recorded stock splits** (read straight from yfinance's `stock splits` column — informational, since Adj Close is already split-adjusted) and flags **statistically anomalous price moves** with a robust, self-calibrating outlier test that adapts per asset and per interval (so genuine crypto swings aren't false-flagged)
 - **Currency safety** — section 1 warns if any loaded series isn't in EUR (the app otherwise assumes a single base currency)
+- **Mixed-calendar caveat** — when a basket mixes 7-day (crypto) with ~5-day (equity) assets, the shared-date join leaves covariance/correlation (and the frontier/VaR built on them) approximate; the app flags this in section 1 and again wherever those figures are used (§5–§8), and suggests weekly/monthly data
 - **Flexible inputs** — configurable portfolio weights, rebalancing frequency, real-vs-nominal terms (with assumed inflation rate), confidence level, date filter
 
 ## Setup
@@ -92,9 +93,9 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | # | Section | Description |
 |---|---------|-------------|
 | 1 | Load Data | Recorded stock-split report, price-anomaly detection, data availability gauge, non-EUR currency warning, reconstructed-history flag |
-| 2 | Per-Asset Analytics | CAGR, returns, drawdown per asset (optionally in real, inflation-adjusted terms) |
+| 2 | Per-Asset Analytics | CAGR, returns, drawdown over each asset's own full history (optionally in real, inflation-adjusted terms) |
 | 3 | Per-Asset Prices | Raw and normalized price charts |
-| 4 | Per-Asset Rolling Returns | Moving-window returns for individual assets |
+| 4 | Per-Asset Rolling Returns | Cumulative moving-window returns (1/2/3/5/7/10y, not annualised) for individual assets |
 | 5 | Per-Asset Returns & Statistics | Per-asset min/max/mean/median/std, Sortino, covariance/correlation matrices, return distributions |
 | 6 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default), optionally in real (inflation-adjusted) terms: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
 | 7 | Monte Carlo Efficient Frontier Portfolio Optimization | Random portfolio simulation (Sharpe & Sortino) — per-period rebalancing |
