@@ -35,8 +35,7 @@ at once — a monthly bar compounds ~21 daily moves, and Bitcoin routinely swing
 a month than an equity asset does in a year. Instead we standardise each return against the
 asset's *own* history using a fat-tail-resistant scale, and flag only the genuine outliers:
 
-$$z_t=\frac{r_t-\mathrm{median}(r)}{1.4826\cdot\mathrm{MAD}(r)},\qquad
-\left|z_t\right| > 8 \;\text{ and }\; \left|r_t\right| > 45\%$$
+$$z_t=\frac{r_t-\mathrm{median}(r)}{1.4826\cdot\mathrm{MAD}(r)},\qquad \left|z_t\right| > 8 \;\text{ and }\; \left|r_t\right| > 45\%$$
 
 where $\mathrm{MAD}$ is the median absolute deviation. The absolute floor is set above the
 largest genuine single-bar swings (even crypto rarely moves more than ~40% in a day),

@@ -260,13 +260,13 @@ def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availabil
     BAR_X    = 40
     BAR_W    = 520
     BAR_H    = 26
-    TITLE_Y  = 18
-    NEEDLE_TIP_Y = TITLE_Y + 10
-    BAR_Y    = NEEDLE_TIP_Y + 14
+    TITLE_Y  = 14            # gauge title baseline
+    LABEL_Y  = 36            # needle value-label baseline (sits a clear row below the title)
+    BAR_Y    = LABEL_Y + 17  # bar top: the value label (at BAR_Y-17) + needle triangle live above it
     TICK_Y1  = BAR_Y + BAR_H + 4
     TICK_Y2  = TICK_Y1 + 6
     TICK_LBL = TICK_Y2 + 11
-    DETAIL_Y = TICK_LBL + 20
+    DETAIL_Y = TICK_LBL + 22
     LINE_H   = 15
 
     needle_x   = BAR_X + pct * BAR_W
