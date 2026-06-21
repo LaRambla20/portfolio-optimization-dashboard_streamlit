@@ -9,3 +9,10 @@ test_screenshots/
 individual_indices_data/^*.csv
 # Reconstructed total-return series (derived artifacts from the reconstruction feature)
 individual_indices_data/*_EXT_data_*.csv
+# Extra downloaded tickers not part of the tracked sample basket
+individual_indices_data/FMF_data_*.csv
+individual_indices_data/IUSQ.DE_data_*.csv
+individual_indices_data/WTMF_data_*.csv
+
+# Exploratory export projects (standalone scripts + analysis report)
+additional_assets/
