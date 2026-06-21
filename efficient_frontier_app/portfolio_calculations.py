@@ -289,6 +289,64 @@ def buy_and_hold_value_series(merged_df, tickers, weights):
     return rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods=None)
 
 
+def rebalanced_value_aftertax(merged_df, tickers, weights, rebalance_every_periods=None, tax_rate=0.0):
+    """After-tax twin of `rebalanced_value_series`: pay capital-gains tax on realized gains at each
+    rebalance, and report a net-liquidation line (tax still owed on unrealized gains if sold today).
+
+    Per-asset value `v` and cost basis `k` both start at the target `weights` (V_0 = 1). Between the
+    same reset rows used by `rebalanced_value_series` the mix drifts with prices; at a reset the
+    overweight legs are trimmed back to target, realizing gains/losses. Realized losses are netted
+    against realized gains within that rebalance and the positive remainder is taxed (no carry-forward
+    — see CLAUDE.md; the Italian zainetto is intentionally not modelled). Tax is paid pro-rata out of
+    the portfolio.
+
+        taxable = max(0, sum_i sell_i * (1 - k_i / v_i))   (sell_i = max(0, v_i - tgt_i))
+        netliq_t = with_tax_t - tax_rate * max(0, with_tax_t - book_t)
+
+    Returns (with_tax, netliq), both pd.Series indexed by date. `tax_rate=0` reproduces
+    `rebalanced_value_series` exactly and `netliq == with_tax`.
+    """
+    prices = merged_df.set_index("date")[list(tickers)]
+    w = np.asarray(weights, dtype=np.float64)
+    w = w / w.sum()
+    pv = prices.to_numpy(dtype=np.float64)
+    n = len(prices)
+    with_tax = pd.Series(index=prices.index, dtype=np.float64)
+    book = pd.Series(index=prices.index, dtype=np.float64)
+    if n == 0:
+        return with_tax, with_tax.copy()
+
+    if rebalance_every_periods is None or rebalance_every_periods < 1:
+        resets = set()  # never rebalanced → no interim realization (only final liquidation tax)
+    else:
+        resets = set(range(int(rebalance_every_periods), n, int(rebalance_every_periods)))
+
+    v = w.copy()
+    k = w.copy()
+    with_tax.iloc[0] = v.sum()
+    book.iloc[0] = k.sum()
+    for t in range(1, n):
+        v = v * (pv[t] / pv[t - 1])
+        if t in resets:
+            V = v.sum()
+            tgt = V * w
+            sell = np.maximum(0.0, v - tgt)
+            basis_frac = np.divide(k, v, out=np.ones_like(k), where=v > 0)
+            realized = sell * (1.0 - basis_frac)
+            taxable = max(0.0, realized.sum())          # net losses against gains within the rebalance
+            tax = tax_rate * taxable
+            k = np.where(v > tgt, k * np.divide(tgt, v, out=np.ones_like(v), where=v > 0), k + (tgt - v))
+            v = tgt.copy()
+            f = tax / V if V > 0 else 0.0
+            v *= 1.0 - f
+            k *= 1.0 - f
+        with_tax.iloc[t] = v.sum()
+        book.iloc[t] = k.sum()
+
+    netliq = with_tax - tax_rate * (with_tax - book).clip(lower=0.0)
+    return with_tax, netliq
+
+
 def underwater_episodes(value):
     """Decompose a value series into drawdown episodes.
 

@@ -29,6 +29,7 @@ from portfolio_calculations import (
     max_drawdown,
     buy_and_hold_value_series,
     rebalanced_value_series,
+    rebalanced_value_aftertax,
     underwater_episodes,
     deepest_drawdown_episode,
     longest_underwater_episode,
@@ -733,7 +734,7 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
                                     risk_free_rate, alpha, window_periods, rolling_window_years,
                                     rebalance_every_periods=None, rebalance_label="never rebalanced (buy-and-hold)",
                                     real_terms=False, annual_inflation=0.0,
-                                    mixed_calendar=False, seven_day_tickers=None):
+                                    mixed_calendar=False, seven_day_tickers=None, cgt_rate=0.0):
     st.header("6. Input Portfolio Analysis")
     st.caption(f"⚖️ Rebalancing: **{rebalance_label}** (set in the sidebar).")
     if real_terms:
@@ -746,7 +747,8 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
          "max_drawdown", "cagr", "avg_annual_return", "annual_volatility", "sharpe", "sortino",
          "rolling_returns_portfolio", "correlation",
          "zscore", "var_parametric", "var_historical", "cvar", "return_distribution"]
-        + (["real_returns"] if real_terms else []),
+        + (["real_returns"] if real_terms else [])
+        + (["capital_gains_tax"] if cgt_rate > 0 else []),
     )
 
     real_sfx = " (real)" if real_terms else ""
@@ -789,6 +791,14 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     if len(bh_ret) < 2:
         st.warning("Not enough overlapping history to analyse the portfolio.")
         return
+
+    # ── Optional capital-gains tax / net-liquidation overlay (feature T; off when cgt_rate == 0) ──
+    netliq = None
+    if cgt_rate > 0:
+        _wtax, netliq = rebalanced_value_aftertax(merged_df, tickers, weights,
+                                                  rebalance_every_periods, cgt_rate)
+        if real_terms:  # deflate the after-tax level once, exactly like `value` above
+            netliq = netliq / real_deflator(netliq.index, annual_inflation)
 
     N = annualisation_factor
     ann_ret = bh_ret.mean() * N
@@ -851,7 +861,10 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     fig_cum, ax_cum = plt.subplots(figsize=(12, 5))
     for t in tickers:
         ax_cum.plot(norm.index, norm[t] - 1.0, lw=1, alpha=0.45, label=t)
-    ax_cum.plot(value.index, value - 1.0, lw=2.2, color="black", label="Portfolio")
+    ax_cum.plot(value.index, value - 1.0, lw=2.2, color="black", label="Portfolio (pre-tax)")
+    if netliq is not None:
+        ax_cum.plot(netliq.index, netliq - 1.0, lw=2.0, color="#c0392b", ls="--",
+                    label="Portfolio (after-tax net-liq)")
     ax_cum.axhline(0, color="#999", lw=0.8)
     ax_cum.set_title(f"Cumulative Return Since Start{real_sfx}")
     ax_cum.set_xlabel("Date")
@@ -861,6 +874,15 @@ def render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers
     ax_cum.grid(True, alpha=0.3)
     st.pyplot(fig_cum)
     plt.close(fig_cum)
+    if netliq is not None:
+        nl_cagr = (netliq.iloc[-1] / netliq.iloc[0]) ** (1.0 / years) - 1.0 if years > 0 else np.nan
+        st.caption(
+            f"💸 **After-tax net-liquidation** (red dashed): {cgt_rate:.0%} capital-gains tax realized "
+            f"on net gains at each rebalance, plus tax owed on unrealized gains if sold today. "
+            f"Net-liq CAGR **{nl_cagr:.2%}** vs pre-tax **{cagr:.2%}** — a tax drag of "
+            f"**{(cagr - nl_cagr) * 100:.2f} pp/yr**. Realized losses net against gains within each "
+            "rebalance (no carry-forward)."
+        )
 
     # ── Underwater curve (annotated) + drawdown/recovery periods ────────────────────────
     st.subheader("Underwater Curve & Drawdown Periods")

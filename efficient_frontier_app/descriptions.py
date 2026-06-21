@@ -619,6 +619,27 @@ is inflation-invariant, **Sharpe, Sortino and the §7/§8 efficient-frontier wei
 which is exactly why the optimization sections stay nominal.
 """,
 
+    "capital_gains_tax": r"""
+**After-tax net-liquidation**
+
+*How it's computed:* with a capital-gains tax rate $\tau$ set in the sidebar, each rebalance trims the
+overweight holdings back to target, realizing gains and losses. Losses **net against gains within that
+same rebalance**, and the positive remainder is taxed (no loss carry-forward is modelled):
+
+$$\text{tax} = \tau\cdot\max\!\Big(0,\ \textstyle\sum_i \text{sell}_i\,(1 - k_i/v_i)\Big),\qquad \text{net-liq}_t = V_t - \tau\cdot\max(0,\ V_t - \text{book}_t)$$
+
+where $v_i$ is each holding's value, $k_i$ its cost basis, $V_t$ the portfolio value and $\text{book}_t$
+its total cost basis. The **net-liquidation** line subtracts the tax still owed on *unrealized* gains as
+if you sold everything on that date — the honest "what you'd keep if you cashed out today" figure.
+
+*What it means for you:* the red dashed line is your portfolio after the taxman. The gap to the pre-tax
+line is the **tax drag**; rebalancing more often realizes gains sooner and widens it. At 0% the line is
+absent (no-op).
+
+*Caveat:* this is a single flat rate on net gains — it does not model loss carry-forward (e.g. the
+Italian *zainetto*), wash-sale rules, or differing rates by holding period or asset class.
+""",
+
 }
 
 

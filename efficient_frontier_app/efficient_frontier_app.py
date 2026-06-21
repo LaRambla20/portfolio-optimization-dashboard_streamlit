@@ -235,6 +235,15 @@ if real_terms:
 else:
     annual_inflation = 0.0
 
+# §6 capital-gains tax overlay: 0% (default) is an exact no-op, so the field is always shown.
+cgt_rate = st.sidebar.number_input(
+    "Capital-gains tax on realized gains (%)",
+    min_value=0.0, max_value=60.0, value=0.0, step=1.0, format="%.0f",
+    help="Adds an after-tax net-liquidation line to §6: this % is charged on net realized gains at "
+         "each rebalance (losses net against gains, no carry-forward), plus tax owed on unrealized "
+         "gains if liquidated today. 0% = off (e.g. Italy ≈ 26%).",
+) / 100.0
+
 alpha = st.sidebar.slider(
     "VaR confidence level (α)", min_value=0.80, max_value=0.99, value=0.95, step=0.01
 )
@@ -497,7 +506,7 @@ render_input_portfolio_analysis(merged_df, portfolio_returns_simple, tickers,
                                 alpha, window_periods, rolling_window_years,
                                 rebalance_every_periods, rebalance_label,
                                 real_terms, annual_inflation,
-                                mixed_calendar, seven_day_tickers)
+                                mixed_calendar, seven_day_tickers, cgt_rate)
 render_monte_carlo(portfolio_returns_simple, portfolio_mean_returns, portfolio_cov_matrix,
                     tickers, annualisation_factor, risk_free_rate, num_portfolios, eps,
                     custom_target_ret, custom_target_vol, my_portfolio_allocation, alpha,

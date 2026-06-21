@@ -11,6 +11,7 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 - **Per-asset analytics** — CAGR, simple/calendar-year returns, look-back-period metrics (only windows that fully fit each asset's history) and cumulative-return charts, each computed over the asset's **own full history** (not the shorter window all the assets share)
 - **Simple returns throughout** — one consistent return definition (actual realised % change) across every section and all optimization, so there's no return-type toggle to reason about
 - **Real (inflation-adjusted) terms** *(optional)* — a sidebar toggle deflates the performance sections (§2 Per-Asset Analytics and §6 Input Portfolio, including its tail risk) by an assumed constant annual inflation rate you set, so figures read in today's purchasing power. A constant rate lowers CAGR/average returns and deepens drawdowns, but **leaves volatility, correlations and the efficient-frontier weights unchanged** (the real risk premium is inflation-invariant) — so the §7/§8 optimization sections stay nominal and say so
+- **After-tax / net-liquidation** *(optional)* — set a capital-gains tax rate in the sidebar (0% = off) to add an after-tax net-liquidation line to §6: the rate is charged on **net** realized gains at each rebalance (losses net against gains within the rebalance; no carry-forward), plus the tax still owed on unrealized gains if you liquidated today. The chart shows the tax drag versus the pre-tax line, and rebalancing more often realizes gains sooner and widens it
 - **Rolling returns** — **cumulative** 1/2/3/5/7/10-year moving-window returns (whole-window totals, *not* annualised, so windows of different lengths aren't directly comparable) for individual assets (the portfolio's rolling returns live in the Input Portfolio Analysis section)
 - **Built-in guidance** — every section has a "How to read this section" panel with plain-language explanations and formulas
 - **Data download** — built-in yfinance downloader with progress streaming, **auto-converting non-EUR tickers to EUR** so the whole portfolio shares one currency (toggleable)
@@ -41,6 +42,8 @@ python -m venv .venv
 
 4. **View in real terms** *(optional)* — tick **Show real (inflation-adjusted) returns** in the sidebar; an **Assumed annual inflation (%)** field appears beneath it (default 2%) for you to set. The Per-Asset Analytics and Input Portfolio sections then report in today's purchasing power.
 
+5. **Model capital-gains tax** *(optional)* — set **Capital-gains tax on realized gains (%)** in the sidebar (default 0% = off; e.g. Italy ≈ 26%). The Input Portfolio section adds an after-tax net-liquidation line and reports the resulting tax drag.
+
 ```bash
 .venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
@@ -61,11 +64,12 @@ For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
 HEADLESS=1 .venv\Scripts\python tests\test_dashboard.py
 ```
 
-Unit tests run standalone (no app or network required) and live in `tests/` — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), the inflation deflator behind the real-terms toggle, the §2 per-asset look-back machinery (look-back window selection, own-history loader, simple-return/CAGR guards), and the compound-CAGR card figure:
+Unit tests run standalone (no app or network required) and live in `tests/` — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), the after-tax / net-liquidation overlay (0% no-op, monotonicity, single-asset and within-period loss-netting), the inflation deflator behind the real-terms toggle, the §2 per-asset look-back machinery (look-back window selection, own-history loader, simple-return/CAGR guards), and the compound-CAGR card figure:
 
 ```bash
 .venv\Scripts\python tests\test_total_return_synthesis.py
 .venv\Scripts\python tests\test_rebalancing.py
+.venv\Scripts\python tests\test_aftertax.py
 .venv\Scripts\python tests\test_real_terms.py
 .venv\Scripts\python tests\test_lookback_windows.py
 .venv\Scripts\python tests\test_geometric_return.py
@@ -100,7 +104,7 @@ Downloaded files also carry a `currency` column, and reconstructed `{ticker}_EXT
 | 3 | Per-Asset Prices | Raw and normalized price charts |
 | 4 | Per-Asset Rolling Returns | Cumulative moving-window returns (1/2/3/5/7/10y, not annualised) for individual assets |
 | 5 | Per-Asset Returns & Statistics | Per-asset min/max/mean/median/std, Sortino, covariance/correlation matrices, return distributions |
-| 6 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default), optionally in real (inflation-adjusted) terms: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
+| 6 | Input Portfolio Analysis | Your allocation at the selected rebalancing cadence (buy-and-hold by default), optionally in real (inflation-adjusted) terms and/or with an after-tax net-liquidation overlay: allocation pie, cumulative returns, annotated underwater curve, drawdown/recovery durations, headline growth metrics (geometric CAGR, arithmetic avg annual return, volatility, Sharpe, Sortino, max drawdown), correlation heatmap, and a **Tail Risk & Return Distribution** subsection (parametric & historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram) |
 | 7 | Monte Carlo Efficient Frontier Portfolio Optimization | Random portfolio simulation (Sharpe & Sortino) — per-period rebalancing |
 | 8 | Scipy Efficient Frontier Portfolio Optimization | Optimized efficient frontier via SLSQP — per-period rebalancing |
 
