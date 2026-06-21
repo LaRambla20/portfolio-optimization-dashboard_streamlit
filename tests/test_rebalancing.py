@@ -14,10 +14,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))
-from portfolio_calculations import (  # noqa: E402
-    rebalanced_value_series,
-    buy_and_hold_value_series,
-)
+from portfolio_calculations import rebalanced_value_series  # noqa: E402
 
 
 def _merged(prices_by_ticker):
@@ -41,12 +38,10 @@ W = np.array([0.5, 0.5])
 def test_never_equals_buy_and_hold():
     merged = _merged(PRICES)
     never = rebalanced_value_series(merged, TICKERS, W, rebalance_every_periods=None)
-    bh = buy_and_hold_value_series(merged, TICKERS, W)
     # Closed-form buy-and-hold: V_t = sum_i w_i * P_it / P_i0
     prices = merged.set_index("date")[TICKERS]
     closed = (prices / prices.iloc[0]).mul(W, axis=1).sum(axis=1)
     assert np.allclose(never.values, closed.values), never.values
-    assert np.allclose(never.values, bh.values), "wrapper must equal K=None"
     # Hand value at the last row: 0.5*1.331 + 0.5*1.20 = 1.2655
     assert abs(never.iloc[-1] - 1.2655) < 1e-12, never.iloc[-1]
     print(f"  Never == buy-and-hold (closed form): V_T={never.iloc[-1]:.6f}  OK")

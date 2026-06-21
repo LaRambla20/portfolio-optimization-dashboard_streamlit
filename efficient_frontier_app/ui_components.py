@@ -27,7 +27,6 @@ from portfolio_calculations import (
     make_allocation_df,
     cvar,
     max_drawdown,
-    buy_and_hold_value_series,
     rebalanced_value_series,
     rebalanced_value_aftertax,
     underwater_episodes,

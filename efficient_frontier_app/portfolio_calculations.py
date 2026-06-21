@@ -59,18 +59,6 @@ def max_drawdown(returns):
     return abs(drawdown.min())
 
 
-def portfolio_cvar(weights, returns, alpha=0.05):
-    """CVaR for a portfolio given weights and return dataframe."""
-    portfolio_returns = returns.dot(weights)
-    return cvar(portfolio_returns, alpha)
-
-
-def portfolio_max_drawdown(weights, returns):
-    """Max drawdown for a portfolio given weights and return dataframe."""
-    portfolio_returns = returns.dot(weights)
-    return max_drawdown(portfolio_returns)
-
-
 def portfolio_downside_deviation(weights, returns, annualisation_factor, risk_free_rate):
     # Downside deviation measured below the (per-period) risk-free rate, so the Sortino MAR
     # matches its numerator (return - risk_free_rate). r_f is de-annualised linearly, consistent
@@ -278,15 +266,6 @@ def rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods
         seg = pv[r + 1:r_next + 1] / pv[r]         # (m, A) price ratios vs the reset reference
         value.iloc[r + 1:r_next + 1] = carry * seg.dot(w)
     return value
-
-
-def buy_and_hold_value_series(merged_df, tickers, weights):
-    """Buy-and-hold (never-rebalanced) value series — thin wrapper over `rebalanced_value_series`.
-
-    Each asset is bought at its first price and held, so the mix drifts with prices:
-    V_t = sum_i w_i * P_it / P_i0, V_0 = 1.
-    """
-    return rebalanced_value_series(merged_df, tickers, weights, rebalance_every_periods=None)
 
 
 def rebalanced_value_aftertax(merged_df, tickers, weights, rebalance_every_periods=None, tax_rate=0.0):
