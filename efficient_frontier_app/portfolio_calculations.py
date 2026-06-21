@@ -88,13 +88,11 @@ def neg_sortino_ratio(weights, mean_returns, cov_matrix, returns,
 
 def max_sortino_ratio(mean_returns, cov_matrix, returns,
                       risk_free_rate, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, returns, risk_free_rate, annualisation_factor)
-    constraints = ({"type": "eq", "fun": lambda x: np.sum(x) - 1},)
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(neg_sortino_ratio, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Objective: maximize the Sortino ratio (minimize its negative). No extra
+    # constraint — search the whole simplex. Needs the per-period `returns` series
+    # (not just mean/cov) to measure downside deviation.
+    return _optimize(neg_sortino_ratio, len(mean_returns),
+                     (mean_returns, cov_matrix, returns, risk_free_rate, annualisation_factor))
 
 
 def random_portfolios(num_portfolios, mean_returns, cov_matrix, risk_free_rate, annualisation_factor):
@@ -135,6 +133,21 @@ def random_portfolios_sortino(num_portfolios, mean_returns, cov_matrix, returns,
     return results, weights_record
 
 
+def _optimize(objective, n_assets, args, extra_constraints=()):
+    """Shared SLSQP driver for the long-only, fully-invested frontier optimizers.
+
+    Minimizes ``objective(weights, *args)`` over the weight simplex: bounds [0,1]
+    per asset, an equality constraint forcing weights to sum to 1, plus any
+    ``extra_constraints`` (e.g. "hit a target return/volatility"). Starts from
+    equal weights. Returns the raw scipy OptimizeResult (callers read ``.x``).
+    """
+    constraints = (*extra_constraints, {"type": "eq", "fun": lambda x: np.sum(x) - 1.0})
+    bounds = tuple((0.0, 1.0) for _ in range(n_assets))
+    x0 = n_assets * [1.0 / n_assets]
+    return sco.minimize(objective, x0, args=args, method="SLSQP",
+                        bounds=bounds, constraints=constraints)
+
+
 def neg_sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate, annualisation_factor):
     p_std_dev, p_ret = portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)
     return -(p_ret - risk_free_rate) / p_std_dev
@@ -149,63 +162,42 @@ def neg_portfolio_return(weights, mean_returns, cov_matrix, annualisation_factor
 
 
 def max_sharpe_ratio(mean_returns, cov_matrix, risk_free_rate, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, risk_free_rate, annualisation_factor)
-    constraints = ({"type": "eq", "fun": lambda x: np.sum(x) - 1},)
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(neg_sharpe_ratio, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Objective: maximize the Sharpe ratio (minimize its negative). No extra
+    # constraint — search the whole simplex for the tangency portfolio.
+    return _optimize(neg_sharpe_ratio, len(mean_returns),
+                     (mean_returns, cov_matrix, risk_free_rate, annualisation_factor))
 
 
 def minimize_volatility(mean_returns, cov_matrix, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, annualisation_factor)
-    constraints = ({"type": "eq", "fun": lambda x: np.sum(x) - 1},)
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(portfolio_volatility_fn, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Objective: minimize annualised portfolio volatility directly (the global
+    # minimum-variance portfolio).
+    return _optimize(portfolio_volatility_fn, len(mean_returns),
+                     (mean_returns, cov_matrix, annualisation_factor))
 
 
 def maximize_return(mean_returns, cov_matrix, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, annualisation_factor)
-    constraints = ({"type": "eq", "fun": lambda x: np.sum(x) - 1},)
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(neg_portfolio_return, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Objective: maximize annualised return (minimize its negative). With
+    # long-only weights this lands on the single highest-return asset.
+    return _optimize(neg_portfolio_return, len(mean_returns),
+                     (mean_returns, cov_matrix, annualisation_factor))
 
 
 def efficient_return(mean_returns, cov_matrix, target, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, annualisation_factor)
-    def portfolio_return(weights):
-        return portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)[1]
-    constraints = (
-        {"type": "eq", "fun": lambda x: portfolio_return(x) - target},
-        {"type": "eq", "fun": lambda x: np.sum(x) - 1},
-    )
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(portfolio_volatility_fn, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Frontier point: minimize volatility subject to the portfolio's annualised
+    # return EQUALLING `target`. The extra equality constraint pins the return.
+    hit_return = {"type": "eq", "fun": lambda x:
+                  portfolio_annualised_performance(x, mean_returns, cov_matrix, annualisation_factor)[1] - target}
+    return _optimize(portfolio_volatility_fn, len(mean_returns),
+                     (mean_returns, cov_matrix, annualisation_factor), (hit_return,))
 
 
 def efficient_volatility(mean_returns, cov_matrix, target, annualisation_factor):
-    num_assets = len(mean_returns)
-    args = (mean_returns, cov_matrix, annualisation_factor)
-    def pv(weights):
-        return portfolio_annualised_performance(weights, mean_returns, cov_matrix, annualisation_factor)[0]
-    constraints = (
-        {"type": "eq", "fun": lambda x: pv(x) - target},
-        {"type": "eq", "fun": lambda x: np.sum(x) - 1},
-    )
-    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
-    result = sco.minimize(neg_portfolio_return, num_assets * [1.0 / num_assets], args=args,
-                          method="SLSQP", bounds=bounds, constraints=constraints)
-    return result
+    # Dual frontier point: maximize return subject to the portfolio's annualised
+    # volatility EQUALLING `target`. The extra equality constraint pins the vol.
+    hit_vol = {"type": "eq", "fun": lambda x:
+               portfolio_annualised_performance(x, mean_returns, cov_matrix, annualisation_factor)[0] - target}
+    return _optimize(neg_portfolio_return, len(mean_returns),
+                     (mean_returns, cov_matrix, annualisation_factor), (hit_vol,))
 
 
 def efficient_frontier_fn(mean_returns, cov_matrix, returns_range, annualisation_factor):
