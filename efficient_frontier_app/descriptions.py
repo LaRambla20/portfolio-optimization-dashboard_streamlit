@@ -640,6 +640,56 @@ absent (no-op).
 Italian *zainetto*), wash-sale rules, or differing rates by holding period or asset class.
 """,
 
+    # ── Sidebar — Get Data panel (rendered with st.markdown, not render_section_help) ──
+    "finding_tickers": r"""
+**Finding a ticker**
+
+A *ticker* is the short code an exchange uses for a fund — `VWCE.MI`, not "Vanguard FTSE All-World".
+
+*Where to look:*
+- **Yahoo Finance** (finance.yahoo.com) — this is where the app downloads from, so it is the
+  source of truth. Search the fund's name; the ticker sits next to it in the header.
+- **justETF** (justetf.com) — best for European ETFs. Search by name or ISIN, then open
+  **Listings** to see which exchanges carry it.
+
+*The suffix says which exchange:*
+- `VWCE.MI` — Milan
+- `SXR8.DE` — Xetra (Germany)
+- `IWDA.AS` — Amsterdam
+- `DBMF` — US listing (no suffix)
+- `BTC-EUR` — crypto, priced in EUR
+- `^GSPC` — a market index (`^` prefix)
+- `EURUSD=X` — an exchange rate (`=X` suffix)
+
+*Check it before you use it:* open the ticker on Yahoo Finance and click **Historical Data**.
+A table going back years means it will work. Only today's price means it will not — some index
+tickers are quote-only and have no history to download.
+
+*Tip:* when a fund trades on several exchanges, prefer the EUR-priced line (`.MI`, `.DE`, `.AS`).
+Everything here assumes EUR, so a EUR listing avoids a currency conversion.
+""",
+
+    "extending_history": r"""
+**Extending an ETF's price history**
+
+Many accumulating ETFs are only a few years old, which makes long-run figures unreliable. This
+option borrows a longer-running **index**, adds back the dividends that index leaves out (measured
+over the years where both exist), and glues that older history in front of the real ETF.
+
+The result is saved as `{ETF}_EXT` — e.g. `VWCE.MI_EXT`. Add *that* ticker to **My Portfolio**
+to analyse it.
+
+*One row per job:*
+- **Index ticker** — the long-history index, e.g. `^GSPC`
+- **Calibrate vs ETF** — the ETF you want to extend, e.g. `SXR8.DE`
+- **FX ticker** — only if the index is quoted in a different currency than the ETF, e.g. `EURUSD=X`
+
+⚠️ *The index must track the same market as the ETF.* An S&P 500 index with an S&P 500 ETF is
+fine; an S&P 500 index with a world ETF is not — the two markets' performance gap gets mistaken
+for dividends and every figure comes out wrong. The run log reports the recovered yield; anything
+outside roughly 0–4%/yr means the pair is mismatched.
+""",
+
 }
 
 

@@ -314,11 +314,11 @@ def synthesize_total_return(price_index, etf, eurusd=None, periods_per_year=252)
     }
 
 
-def build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_year):
+def build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_year, currency=None):
     """Splice a price-return index in front of an accumulating ETF and tag the join.
 
     Wraps :func:`synthesize_total_return` and shapes the result into the on-disk CSV
-    schema: ``date, adj close, synthetic, recon_yield``. ``synthetic`` is ``True`` for
+    schema: ``date, adj close, synthetic, recon_yield`` (plus ``currency`` when given). ``synthetic`` is ``True`` for
     rows reconstructed from the index (before the ETF's first date), ``False`` for the
     real ETF rows. ``recon_yield`` carries the calibrated annual gross-up ``q_hat`` on
     synthetic rows and is blank on real rows (a single scalar, repeated only so the
@@ -336,6 +336,10 @@ def build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_y
     is_synth = frame["date"] < join_date
     frame["synthetic"] = is_synth
     frame["recon_yield"] = np.where(is_synth, q_hat, np.nan)
+    # Appended *after* the tag columns so `date`/`adj close` stay at positions 0-1 for
+    # build_merged_dataframe's positional `iloc[:, :2]` read.
+    if currency is not None:
+        frame["currency"] = currency
     frame["date"] = pd.to_datetime(frame["date"]).dt.strftime("%Y-%m-%d")
     return frame, meta
 
@@ -488,6 +492,17 @@ def apply_eur_conversion(data, eur_multiplier):
     return out
 
 
+def convert_series_to_eur(prices, eur_multiplier):
+    """Scale a date-indexed price Series into EUR.
+
+    Thin wrapper over :func:`apply_eur_conversion` so the reconstruction path reuses the
+    same nearest-prior FX alignment as the download path instead of re-deriving it.
+    """
+    tmp = pd.DataFrame({"date": prices.index.strftime("%Y-%m-%d"), "adj close": prices.values})
+    out = apply_eur_conversion(tmp, eur_multiplier)
+    return pd.Series(out["adj close"].values, index=prices.index)
+
+
 def run_download(tickers, intervals, columns_to_drop, output_dir, log_queue,
                  convert_to_eur=True):
     import yfinance as yf
@@ -545,15 +560,15 @@ def run_download(tickers, intervals, columns_to_drop, output_dir, log_queue,
                 data.to_csv(out_path, index=False)
                 done += 1
                 cur_note = f", currency={stored_currency}" if stored_currency else ""
-                log_queue.put(f"Saved {out_path}  ({len(data)} rows{cur_note})")
+                log_queue.put(f"✅ Saved {out_path}  ({len(data)} rows{cur_note})")
             except Exception as e:
-                log_queue.put(f"Error downloading {symbol}: {e}")
+                log_queue.put(f"❌ Error downloading {symbol}: {e}")
                 done += 1
 
     log_queue.put(f"__DONE__{done}/{total}")
 
 
-def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue):
+def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue, convert_to_eur=True):
     """Download price-return indices + accumulating ETFs and splice them into
     total-return histories, saving each as ``{etf}_EXT_data_{period}.csv``.
 
@@ -561,6 +576,12 @@ def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue):
     job × interval it downloads the index (price-return), the ETF (total-return) and,
     if given, the FX pair (USD-per-EUR), then calls :func:`build_reconstructed_frame`.
     Mirrors :func:`run_download`'s log/progress contract (``__DONE__done/total``).
+
+    ``convert_to_eur`` scales the **ETF leg** into EUR before splicing and records the
+    stored currency, mirroring :func:`run_download`. Only the ETF leg is converted: the
+    older synthetic rows are already put into the ETF's currency by the job's ``fx``
+    ticker inside :func:`synthesize_total_return`, so converting the spliced output
+    instead would double-convert them.
     """
     import yfinance as yf
 
@@ -601,7 +622,26 @@ def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue):
                 etf_prices = fetch(etf_sym, yf_interval)
                 fx_prices = fetch(fx_sym, yf_interval) if fx_sym else None
 
-                frame, meta = build_reconstructed_frame(index_prices, etf_prices, fx_prices, ppy)
+                # Same currency contract as run_download: convert the ETF leg to EUR and
+                # record what actually got stored, so §1 can check it offline.
+                native = detect_currency(etf_sym, yf)
+                stored_currency = native
+                if convert_to_eur:
+                    mult = fetch_eur_multiplier(native, yf_interval, today, yf)
+                    if mult is not None:
+                        etf_prices = convert_series_to_eur(etf_prices, mult)
+                        stored_currency = "EUR"
+                        log_queue.put(f"Converted {etf_sym} {native}→EUR via {native}EUR=X")
+                    elif native and native.upper() != "EUR":
+                        log_queue.put(
+                            f"⚠️  Could not fetch {native}EUR=X for {etf_sym}; "
+                            f"saved in {native} (unconverted)."
+                        )
+
+                frame, meta = build_reconstructed_frame(
+                    index_prices, etf_prices, fx_prices, ppy,
+                    currency=stored_currency if stored_currency else "",
+                )
                 out_path = os.path.join(output_dir, f"{etf_sym}_EXT" + suffix_map[interval_period])
                 frame.to_csv(out_path, index=False)
 

@@ -23,6 +23,7 @@ from data_handling import (  # noqa: E402
     build_merged_dataframe,
     apply_eur_conversion,
     read_currency_info,
+    convert_series_to_eur,
 )
 
 
@@ -201,6 +202,52 @@ def test_currency_info_reads_stored_column():
     print("  currency info: reads stored column offline (no sniff)  OK")
 
 
+def test_convert_series_to_eur():
+    """The reconstruction path's ETF leg converts exactly like the download path's frame."""
+    prices = pd.Series(
+        [10.0, 11.0, 12.0],
+        index=pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-03"]),
+    )
+    fx = pd.Series([0.90, 0.92], index=pd.to_datetime(["2020-01-01", "2020-01-03"]))
+    out = convert_series_to_eur(prices, fx)
+    # Same nearest-prior alignment as apply_eur_conversion (day 2 has no FX -> 0.90).
+    assert np.allclose(out.values, [10.0 * 0.90, 11.0 * 0.90, 12.0 * 0.92])
+    assert out.index.equals(prices.index), "index must survive the round-trip"
+    print("  convert_series_to_eur: scales series, keeps index, nearest-prior FX  OK")
+
+
+def test_reconstruction_currency_column():
+    """`currency` is appended last so positional 2-column readers keep working."""
+    N = 12
+    idx = _index_series(240, N, seed=11)
+    etf = _gross_up(idx, 0.02, N).iloc[120:]
+
+    # Default (None) stays on the pre-existing 4-column schema, byte-for-byte.
+    frame_plain, _ = build_reconstructed_frame(idx, etf, None, N)
+    assert list(frame_plain.columns) == ["date", "adj close", "synthetic", "recon_yield"]
+
+    frame_cur, _ = build_reconstructed_frame(idx, etf, None, N, currency="EUR")
+    assert list(frame_cur.columns) == ["date", "adj close", "synthetic", "recon_yield", "currency"]
+    # date/adj close must stay at positions 0-1 for build_merged_dataframe's iloc[:, :2].
+    assert list(frame_cur.columns[:2]) == ["date", "adj close"]
+    assert (frame_cur["currency"] == "EUR").all()
+    # Adding the column changes nothing else.
+    for col in frame_plain.columns:
+        assert frame_plain[col].equals(frame_cur[col]), col
+
+    # End to end: §1's currency check reads it offline, and the price reader ignores it.
+    import os
+    import tempfile
+    suffix = "_data_monthly.csv"
+    with tempfile.TemporaryDirectory() as d:
+        frame_cur.to_csv(os.path.join(d, "XXX_EXT" + suffix), index=False)
+        assert read_currency_info(["XXX_EXT"], d, suffix) == {"XXX_EXT": "EUR"}
+        merged = build_merged_dataframe(["XXX_EXT"], d, suffix, pd.Timestamp("2100-01-01"))
+        assert list(merged.columns) == ["date", "XXX_EXT"]
+        assert len(merged) == len(frame_cur)
+    print("  reconstruction currency column: appended last, read offline, 2-col reader OK")
+
+
 def test_real_sp500_yield():
     try:
         import yfinance as yf
@@ -239,5 +286,7 @@ if __name__ == "__main__":
     test_save_read_roundtrip()
     test_eur_conversion_scales_prices()
     test_currency_info_reads_stored_column()
+    test_convert_series_to_eur()
+    test_reconstruction_currency_column()
     test_real_sp500_yield()
     print("All tests passed.")

@@ -24,6 +24,8 @@ from data_handling import (
     read_currency_info,
 )
 
+from descriptions import DESCRIPTIONS
+
 from ui_components import (
     render_load_etf_data,
     render_per_etf_analytics,
@@ -48,6 +50,10 @@ st.set_page_config(
 
 st.title("📈 Efficient Frontier — Modern Portfolio Theory")
 
+# Radio labels for the Get Data panel. Both jobs download; the wording has to say so.
+DL_MODE_PLAIN  = "Download ETF's price history as is"
+DL_MODE_EXTEND = "Download & extend ETF's price history"
+
 # ─────────────────────────────────────────────────────────
 # SIDEBAR — ALL USER INPUTS
 # ─────────────────────────────────────────────────────────
@@ -71,75 +77,106 @@ st.sidebar.caption(
     "it smooths out short-term noise and better reflects the holding horizon."
 )
 
-# --- Download ---
-st.sidebar.subheader("📥 Download Data")
-with st.sidebar.expander("Download settings", expanded=False):
-    dl_tickers_raw = st.text_area(
-        "Tickers to download (one per line)",
-        value="EM57.MI\nVWCE.MI\nSGLD.MI\nBTC-EUR",
-        height=120,
-        help="These are the tickers passed to yfinance. They don't have to match your portfolio.",
-    )
-    dl_intervals = st.multiselect(
-        "Intervals to download",
-        options=["daily", "weekly", "monthly"],
-        default=["daily"],
-    )
-    dl_columns_to_drop = st.multiselect(
-        "Columns to drop",
-        options=["Volume", "Capital Gains", "High", "Low", "Open", "Dividends", "Stock Splits"],
-        default=["Volume", "Capital Gains", "High", "Low", "Open"],
-    )
-    dl_output_dir = st.text_input(
-        "Download output folder",
-        value="individual_indices_data",
-        help="Must match the CSV folder path used for analysis.",
-    )
-    dl_keep_native = st.checkbox(
-        "Keep native currency (don't convert to EUR)",
-        value=False,
-        help="By default, any ticker not trading in EUR is detected and its prices are "
-             "scaled to EUR via the matching `{CCY}EUR=X` rate before saving, so the whole "
-             "portfolio shares one currency (the app does no FX conversion elsewhere). Tick "
-             "this to store the raw native-currency prices instead — §1 will then warn if "
-             "they aren't EUR.",
-    )
-    dl_button = st.button("⬇️  Download now", width="stretch")
-
-    st.markdown("---")
-    st.markdown("**🧬 Total-return reconstruction** *(optional)*")
+# --- Get data (one panel: plain download, or download + history extension) ---
+st.sidebar.subheader("📥 Get Data")
+with st.sidebar.expander("Get data settings", expanded=False):
     st.caption(
-        "Extend an accumulating ETF backward with a longer **price-return** index "
-        "(most `^` / Stooq indices exclude dividends). The missing dividend yield is "
-        "calibrated from the ETF overlap, the older index history is grossed up and "
-        "spliced on, and the result is saved as `{ETF}_EXT`. Add an **FX ticker** "
-        "(e.g. `EURUSD=X`) when the index is quoted in a different currency than the "
-        "ETF, or the yield will absorb FX drift. Uses the *Intervals* selected above.\n\n"
-        "⚠️ The index must track the **same underlying** as the ETF (e.g. an S&P 500 "
-        "index with an S&P 500 ETF). Pairing mismatched underlyings (S&P 500 vs "
-        "All-World) folds their performance gap into a meaningless yield — a recovered "
-        "`q` outside ~0–4%/yr is the tell."
+        "Both options **download from Yahoo Finance** — nothing needs to be on disk first."
     )
-    if "recon_jobs_df" not in st.session_state:
-        st.session_state.recon_jobs_df = pd.DataFrame(
-            [{"Index ticker": "^GSPC", "Calibrate vs ETF": "SXR8.DE", "FX ticker": "EURUSD=X"}]
+    dl_mode = st.radio(
+        "What do you want to do?",
+        options=[DL_MODE_PLAIN, DL_MODE_EXTEND],
+        index=0,
+    )
+
+    if dl_mode == DL_MODE_EXTEND:
+        with st.expander("📖 How this works"):
+            st.markdown(DESCRIPTIONS["extending_history"])
+
+    # Ticker inputs are deliberately *never* pre-filled — examples live in the placeholder
+    # and the column tooltips, so there is nothing to erase before each use.
+    if dl_mode == DL_MODE_PLAIN:
+        dl_tickers_raw = st.text_area(
+            "Tickers (one per line)",
+            value="",
+            height=120,
+            placeholder="VWCE.MI\nBTC-EUR\nDBMF",
+            help="One ticker per line. They don't have to match your portfolio.",
         )
-    recon_jobs_edited = st.data_editor(
-        st.session_state.recon_jobs_df,
-        num_rows="dynamic",
-        width="stretch",
-        column_config={
-            "Index ticker": st.column_config.TextColumn(
-                "Index ticker", help="Long-history price-return index (e.g. ^GSPC)."),
-            "Calibrate vs ETF": st.column_config.TextColumn(
-                "Calibrate vs ETF", help="Accumulating ETF to calibrate the yield against."),
-            "FX ticker": st.column_config.TextColumn(
-                "FX ticker", help="USD-per-EUR pair (e.g. EURUSD=X). Leave blank if same currency."),
-        },
-        key="recon_editor",
+        recon_jobs_edited = None
+    else:
+        dl_tickers_raw = ""
+        if "recon_jobs_df" not in st.session_state:
+            st.session_state.recon_jobs_df = pd.DataFrame({
+                "Index ticker":     pd.Series(dtype="str"),
+                "Calibrate vs ETF": pd.Series(dtype="str"),
+                "FX ticker":        pd.Series(dtype="str"),
+            })
+        # NOTE: do *not* write the returned frame back into st.session_state.recon_jobs_df.
+        # With key= set, the editor persists edits as a diff against this stable seed;
+        # reassigning it moves the baseline underneath the widget and drops a freshly-typed
+        # row until it is entered twice — the same trap documented on the portfolio editor.
+        recon_jobs_edited = st.data_editor(
+            st.session_state.recon_jobs_df,
+            num_rows="dynamic",
+            width="stretch",
+            column_config={
+                "Index ticker": st.column_config.TextColumn(
+                    "Index", help="Long-history index, e.g. ^GSPC"),
+                "Calibrate vs ETF": st.column_config.TextColumn(
+                    "ETF", help="The fund to extend, e.g. SXR8.DE"),
+                "FX ticker": st.column_config.TextColumn(
+                    "FX", help="Only if the index is priced in another currency, e.g. EURUSD=X"),
+            },
+            key="recon_editor",
+        )
+        st.caption("Press **+** to add a row — e.g. `^GSPC` · `SXR8.DE` · `EURUSD=X`")
+
+    dl_intervals = st.multiselect(
+        "Intervals to fetch",
+        options=["daily", "weekly", "monthly"],
+        default=[data_period],
+        help="Which bar sizes to save. Defaults to the Data period selected above.",
     )
-    st.session_state.recon_jobs_df = recon_jobs_edited
-    recon_button = st.button("🧬  Reconstruct now", width="stretch")
+    # The default only binds on first render, so it can drift if Data period changes later.
+    # Check live instead: fetching an interval you don't analyse is the classic missing-file trap.
+    if dl_intervals and data_period not in dl_intervals:
+        st.warning(
+            f"You're analysing **{data_period}** data but not fetching it — "
+            f"add \"{data_period}\", or Run Analysis will report a missing file."
+        )
+
+    dl_button = st.button(
+        "⬇️  Download" if dl_mode == DL_MODE_PLAIN else "🧬  Download & extend",
+        width="stretch",
+    )
+
+    with st.expander("⚙️ Advanced"):
+        dl_columns_to_drop = st.multiselect(
+            "Columns to drop",
+            options=["Volume", "Capital Gains", "High", "Low", "Open", "Dividends", "Stock Splits"],
+            default=["Volume", "Capital Gains", "High", "Low", "Open"],
+            help="Applies to plain downloads only.",
+        )
+        dl_output_dir = st.text_input(
+            "Output folder",
+            value="",
+            placeholder=folder_path,
+            help="Leave blank to save into the CSV folder path above — they must match for "
+                 "the app to find the files.",
+        )
+        dl_keep_native = st.checkbox(
+            "Keep native currency (don't convert to EUR)",
+            value=False,
+            help="By default, any ticker not trading in EUR is detected and its prices are "
+                 "scaled to EUR via the matching `{CCY}EUR=X` rate before saving, so the whole "
+                 "portfolio shares one currency (the app does no FX conversion elsewhere). Tick "
+                 "this to store the raw native-currency prices instead — §1 will then warn if "
+                 "they aren't EUR.",
+        )
+
+    with st.expander("📖 How to find tickers"):
+        st.markdown(DESCRIPTIONS["finding_tickers"])
 
 # --- Portfolio definition ---
 st.sidebar.subheader("My Portfolio")
@@ -326,111 +363,94 @@ else:
     my_portfolio_allocation = {k: 1.0 / len(raw_portfolio) for k in raw_portfolio}
 
 # ─────────────────────────────────────────────────────────
-# DOWNLOAD PANEL
+# GET DATA — job runner
 # ─────────────────────────────────────────────────────────
+
+def cell_text(value):
+    """A data_editor cell as clean text ('' for the None/NaN a fresh row yields)."""
+    return "" if value is None or pd.isna(value) else str(value).strip()
+
+
+def run_job_with_progress(title, target, args, kwargs, total_tasks, done_message):
+    """Run a backend job on a thread, streaming its log queue into a live progress UI.
+
+    Both backends share one contract: the log queue is their last positional argument,
+    lines prefixed ✅/❌ each mark one finished task, and a final ``__DONE__done/total``
+    carries the authoritative count.
+    """
+    st.subheader(title)
+    log_box  = st.empty()
+    prog_bar = st.progress(0)
+    status   = st.empty()
+
+    log_lines = []
+    log_q = queue.Queue()
+    t = threading.Thread(target=target, args=tuple(args) + (log_q,), kwargs=kwargs, daemon=True)
+    t.start()
+
+    completed = 0
+    while t.is_alive() or not log_q.empty():
+        try:
+            msg = log_q.get(timeout=0.2)
+            if msg.startswith("__DONE__"):
+                completed = int(msg.replace("__DONE__", "").split("/")[0])
+                prog_bar.progress(1.0)
+            else:
+                log_lines.append(msg)
+                if msg.startswith(("✅", "❌")):
+                    completed += 1
+                    prog_bar.progress(min(completed / total_tasks, 1.0))
+                log_box.code("\n".join(log_lines[-30:]))
+        except queue.Empty:
+            pass
+
+    t.join()
+    status.success(f"{done_message} ({completed}/{total_tasks} processed)")
+    st.divider()
+
 
 if dl_button:
-    dl_tickers = [t.strip() for t in dl_tickers_raw.strip().splitlines() if t.strip()]
-    if not dl_tickers:
-        st.warning("No tickers entered — nothing to download.")
-    elif not dl_intervals:
-        st.warning("Select at least one interval to download.")
+    # Blank output folder means "the folder the app reads from" — they have to match.
+    output_dir = dl_output_dir.strip() or folder_path
+
+    if not dl_intervals:
+        st.warning("Select at least one interval to fetch.")
+
+    elif dl_mode == DL_MODE_PLAIN:
+        dl_tickers = [t.strip() for t in dl_tickers_raw.strip().splitlines() if t.strip()]
+        if not dl_tickers:
+            st.warning("No tickers entered — type at least one ticker, one per line.")
+        else:
+            run_job_with_progress(
+                "📥 Downloading Data",
+                run_download,
+                (dl_tickers, dl_intervals, dl_columns_to_drop, output_dir),
+                {"convert_to_eur": not dl_keep_native},
+                len(dl_tickers) * len(dl_intervals),
+                "Download complete.",
+            )
+
     else:
-        st.subheader("📥 Downloading Data")
-        log_box  = st.empty()
-        prog_bar = st.progress(0)
-        status   = st.empty()
-
-        log_lines = []
-        log_q = queue.Queue()
-        total_tasks = len(dl_tickers) * len(dl_intervals)
-
-        t = threading.Thread(
-            target=run_download,
-            args=(dl_tickers, dl_intervals, dl_columns_to_drop, dl_output_dir, log_q),
-            kwargs={"convert_to_eur": not dl_keep_native},
-            daemon=True,
-        )
-        t.start()
-
-        completed = 0
-        while t.is_alive() or not log_q.empty():
-            try:
-                msg = log_q.get(timeout=0.2)
-                if msg.startswith("__DONE__"):
-                    completed = int(msg.replace("__DONE__", "").split("/")[0])
-                    prog_bar.progress(1.0)
-                else:
-                    log_lines.append(msg)
-                    if any(msg.startswith(p) for p in ["✅", "❌"]):
-                        completed += 1
-                        prog_bar.progress(min(completed / total_tasks, 1.0))
-                    log_box.code("\n".join(log_lines[-30:]))
-            except queue.Empty:
-                pass
-
-        t.join()
-        status.success(f"Download complete — {completed}/{total_tasks} files processed.")
-        st.divider()
-
-# ─────────────────────────────────────────────────────────
-# RECONSTRUCTION PANEL
-# ─────────────────────────────────────────────────────────
-
-if recon_button:
-    recon_jobs = [
-        {
-            "index": str(r["Index ticker"]).strip(),
-            "etf": str(r["Calibrate vs ETF"]).strip(),
-            "fx": str(r.get("FX ticker") or "").strip(),
-        }
-        for _, r in recon_jobs_edited.iterrows()
-        if str(r["Index ticker"]).strip() and str(r["Calibrate vs ETF"]).strip()
-    ]
-    if not recon_jobs:
-        st.warning("Add at least one row with both an index ticker and a calibrating ETF.")
-    elif not dl_intervals:
-        st.warning("Select at least one interval (in the Download settings above).")
-    else:
-        st.subheader("🧬 Reconstructing Total-Return History")
-        rec_log_box  = st.empty()
-        rec_prog_bar = st.progress(0)
-        rec_status   = st.empty()
-
-        rec_log_lines = []
-        rec_log_q = queue.Queue()
-        rec_total = len(recon_jobs) * len(dl_intervals)
-
-        rt = threading.Thread(
-            target=run_total_return_reconstruction,
-            args=(recon_jobs, dl_intervals, dl_output_dir, rec_log_q),
-            daemon=True,
-        )
-        rt.start()
-
-        rec_completed = 0
-        while rt.is_alive() or not rec_log_q.empty():
-            try:
-                msg = rec_log_q.get(timeout=0.2)
-                if msg.startswith("__DONE__"):
-                    rec_completed = int(msg.replace("__DONE__", "").split("/")[0])
-                    rec_prog_bar.progress(1.0)
-                else:
-                    rec_log_lines.append(msg)
-                    if any(msg.startswith(p) for p in ["✅", "❌"]):
-                        rec_prog_bar.progress(min(len(
-                            [m for m in rec_log_lines if m.startswith(("✅", "❌"))]
-                        ) / rec_total, 1.0))
-                    rec_log_box.code("\n".join(rec_log_lines[-30:]))
-            except queue.Empty:
-                pass
-
-        rt.join()
-        rec_status.success(
-            f"Reconstruction complete — {rec_total} job(s) processed. "
-            "Add the new `{ETF}_EXT` ticker(s) to **My Portfolio** to analyze them."
-        )
-        st.divider()
+        recon_jobs = [
+            {
+                "index": cell_text(r["Index ticker"]),
+                "etf":   cell_text(r["Calibrate vs ETF"]),
+                "fx":    cell_text(r.get("FX ticker")),
+            }
+            for _, r in recon_jobs_edited.iterrows()
+            if cell_text(r["Index ticker"]) and cell_text(r["Calibrate vs ETF"])
+        ]
+        if not recon_jobs:
+            st.warning("Add at least one row with both an index ticker and an ETF.")
+        else:
+            run_job_with_progress(
+                "🧬 Downloading & Extending History",
+                run_total_return_reconstruction,
+                (recon_jobs, dl_intervals, output_dir),
+                {"convert_to_eur": not dl_keep_native},
+                len(recon_jobs) * len(dl_intervals),
+                "Done — add the new `..._EXT` ticker(s) to **My Portfolio** to analyse them.",
+            )
 
 # ─────────────────────────────────────────────────────────
 # RUN BUTTON
