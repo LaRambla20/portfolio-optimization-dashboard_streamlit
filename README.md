@@ -2,6 +2,8 @@
 
 A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price data (ETFs, crypto, indices), visualize the efficient frontier, run Monte Carlo simulations, and evaluate risk via VaR and CVaR.
 
+![The dashboard after Run Analysis](docs/images/01-overview.jpg)
+
 ## Features
 
 - **Input portfolio analysis** — your allocation held at a **selectable rebalancing cadence** (buy-and-hold by default): allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, headline growth/drawdown metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown), and a **Tail Risk & Return Distribution** subsection (parametric + historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram)
@@ -21,31 +23,57 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 - **Mixed-calendar caveat** — when a basket mixes 7-day (crypto) with ~5-day (equity) assets, the shared-date join leaves covariance/correlation (and the frontier/VaR built on them) approximate; the app flags this in section 1 and again wherever those figures are used (§5–§8), and suggests weekly/monthly data
 - **Flexible inputs** — configurable portfolio weights, rebalancing frequency, real-vs-nominal terms (with assumed inflation rate), confidence level, date filter
 
+## Screenshots
+
+**Section 6 — Input Portfolio Analysis.** Your allocation at the selected rebalancing cadence: cumulative
+return with per-asset overlays, then the underwater curve with the deepest drawdown episode shaded.
+
+![Cumulative return and underwater curve](docs/images/02-portfolio-analysis.jpg)
+
+**Section 6 — Tail Risk & Return Distribution.** The realised return distribution against a fitted normal,
+with the parametric VaR cut marked, above the mean/median/volatility/skew/kurtosis profile.
+
+![Return distribution and per-period profile](docs/images/03-tail-risk.jpg)
+
+**Section 8 — Scipy Efficient Frontier.** The SLSQP frontier over the Monte Carlo cloud, coloured by Sharpe
+ratio, with your portfolio and each optimized portfolio marked.
+
+![Efficient frontier with optimized portfolios](docs/images/04-efficient-frontier.jpg)
+
 ## Setup
 
+Commands below are **Linux/macOS**. On Windows, swap `.venv/bin/…` for `.venv\Scripts\…` — see
+**[WINDOWS.md](WINDOWS.md)**, which also covers the corporate-SSL workarounds.
+
 ```bash
-python -m venv .venv
-.venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org streamlit pandas numpy scipy matplotlib seaborn yfinance
+python3 -m venv .venv
+.venv/bin/pip install streamlit pandas numpy scipy matplotlib seaborn yfinance playwright
+.venv/bin/playwright install chromium      # ~115 MB, only needed to run the e2e test
 ```
 
-> The `--trusted-host` flags work around SSL certificate issues common on Windows.
+> **Debian/Ubuntu ship `ensurepip` separately**, so a bare `python3 -m venv .venv` fails with
+> `ModuleNotFoundError: No module named 'ensurepip'`. Either `sudo apt install python3-venv`, or build
+> it pip-less and bootstrap: `python3 -m venv --without-pip .venv`, then
+> `curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python -`.
 
-> **Requires Streamlit ≥ 1.50.** The app uses APIs from recent Streamlit (`width="stretch"`, and `st.markdown(..., unsafe_allow_html=True)` for the SVG data-availability gauge in place of the now-removed `st.components.v1.html`). Developed against Streamlit 1.58.
+> **Requires Streamlit ≥ 1.50.** The app uses APIs from recent Streamlit (`width="stretch"`, and `st.markdown(..., unsafe_allow_html=True)` for the SVG data-availability gauge in place of the now-removed `st.components.v1.html`). Last verified end-to-end on Python 3.14.4 · streamlit 1.62 · pandas 3.0.5 · numpy 2.5.2 · scipy 1.18 · yfinance 1.6 · playwright 1.62.
 
 ## Usage
 
-1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, and BTC-EUR are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
+1. **Run analysis** — pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, BTC-EUR and ZPRV.DE (daily + monthly) are included in `individual_indices_data/`. Configure your portfolio and parameters in the sidebar, then click **Run Analysis**.
 
-2. **Add or refresh tickers** — expand the "Download Data" panel in the sidebar, enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`), and click Download. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** to store raw prices instead.
+2. **Add or refresh tickers** — expand **📥 Get Data** in the sidebar and pick *Download ETF's price history as is*, then enter tickers in yfinance format (e.g. `IWDA.AS`, `BTC-EUR`) one per line and click Download. Nothing needs to be on disk first. Non-EUR tickers are auto-converted to EUR by default; tick **Keep native currency** under ⚙️ Advanced to store raw prices instead.
 
-3. **Extend an ETF with index history** *(optional)* — in the same panel, use **Total-return reconstruction** to pair a long price-return index (e.g. `^GSPC`) with the accumulating ETF that tracks it and an FX ticker (e.g. `EURUSD=X`). The result is saved as `{ETF}_EXT`; add it to your portfolio to analyze the extended history. The index must track the **same underlying** as the ETF (a recovered dividend yield outside ~0–4%/yr is the tell that it doesn't).
+3. **Extend an ETF with index history** *(optional)* — in the same panel, pick *Download & extend ETF's price history* and click **🧬 Start guided setup**. A four-step wizard (Fund → Index → Currency → Confirm) probes each ticker against Yahoo before anything runs: it suggests index candidates, previews the recovered yield for each, and derives the FX pair for you. The result is saved as `{ETF}_EXT`; add it to your portfolio to analyze the extended history.
+
+   The index must track the **same underlying** as the ETF, and the recovered yield q̂ is what proves it. The plausible range depends on the pairing, so the wizard judges against two bands: **0–6%/yr** when the index is price-only and the fund collects the dividends (the gap *is* the yield), or **−0.5% to +0.5%/yr** when the index already carries the income or the asset has none, like gold (only fees separate them). Outside its band, **Reconstruct** stays disabled.
 
 4. **View in real terms** *(optional)* — tick **Show real (inflation-adjusted) returns** in the sidebar; an **Assumed annual inflation (%)** field appears beneath it (default 2%) for you to set. The Per-Asset Analytics and Input Portfolio sections then report in today's purchasing power.
 
 5. **Model capital-gains tax** *(optional)* — set **Capital-gains tax on realized gains (%)** in the sidebar (default 0% = off; e.g. Italy ≈ 26%). The Input Portfolio section adds an after-tax net-liquidation line and reports the resulting tax drag.
 
 ```bash
-.venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
+.venv/bin/streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
 ## Testing
@@ -53,27 +81,31 @@ python -m venv .venv
 A Playwright end-to-end test drives the full dashboard in a real browser. Start the app first, then run:
 
 ```bash
-.venv\Scripts\python tests\test_dashboard.py
+HEADLESS=1 .venv/bin/python tests/test_dashboard.py
 ```
 
 This clicks **Run Analysis**, waits for all computations to finish, verifies all 8 section headers, checks portfolio cards, and saves screenshots to `test_screenshots/`.
 
-For automated/CI runs, set `HEADLESS=1` to run without a visible browser window:
+`HEADLESS=1` is effectively mandatory on Linux — a visible browser needs an X/Wayland display and
+hangs without one.
+
+Eight unit tests run standalone (no app, no network) and live in `tests/`. Run one with
+`.venv/bin/python tests/test_X.py`, or all of them:
 
 ```bash
-HEADLESS=1 .venv\Scripts\python tests\test_dashboard.py
+for t in tests/test_*.py; do [ "$t" = tests/test_dashboard.py ] || .venv/bin/python "$t"; done
 ```
 
-Unit tests run standalone (no app or network required) and live in `tests/` — total-return reconstruction / EUR-conversion logic, the rebalanced-portfolio value series (the basis for §6, including its tail-risk subsection), the after-tax / net-liquidation overlay (0% no-op, monotonicity, single-asset and within-period loss-netting), the inflation deflator behind the real-terms toggle, the §2 per-asset look-back machinery (look-back window selection, own-history loader, simple-return/CAGR guards), and the compound-CAGR card figure:
-
-```bash
-.venv\Scripts\python tests\test_total_return_synthesis.py
-.venv\Scripts\python tests\test_rebalancing.py
-.venv\Scripts\python tests\test_aftertax.py
-.venv\Scripts\python tests\test_real_terms.py
-.venv\Scripts\python tests\test_lookback_windows.py
-.venv\Scripts\python tests\test_geometric_return.py
-```
+| Test | Covers |
+|---|---|
+| `test_total_return_synthesis.py` | Total-return reconstruction and EUR-conversion logic (plus one live check that skips offline) |
+| `test_rebalancing.py` | The rebalanced-portfolio value series — the basis for §6, including its tail-risk subsection |
+| `test_aftertax.py` | The after-tax / net-liquidation overlay: 0% no-op, monotonicity, single-asset, within-period loss-netting |
+| `test_real_terms.py` | The inflation deflator behind the real-terms toggle |
+| `test_lookback_windows.py` | The §2 per-asset look-back machinery: window selection, own-history loader, simple-return/CAGR guards |
+| `test_geometric_return.py` | The compound-CAGR figure on the portfolio cards |
+| `test_extend_wizard.py` | The guided wizard's pure helpers: FX-pair direction, index-name cleanup, and the two-band q̂ gate |
+| `test_optimizers.py` | The §7/§8 SLSQP frontier solvers: long-only simplex, volatility floor, exact target hits |
 
 ## Project Structure
 
@@ -87,6 +119,7 @@ efficient_frontier_app/
 
 individual_indices_data/        # Asset price CSVs (pre-loaded samples included; downloader writes here)
 tests/                          # Playwright e2e (test_dashboard.py) + standalone unit tests
+docs/images/                    # README screenshots
 ```
 
 ## Data Format
