@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+> **On Linux? See [LINUX.md](LINUX.md).** The commands below are Windows-only (`.venv\Scripts\…`, PowerShell, corporate-SSL workarounds). `LINUX.md` has the equivalents; everything outside this *Commands*/*Testing*/*Git* command syntax applies to both.
+
 - **No build system or linter.** A Playwright end-to-end test exists — see **Testing**.
 
 **Setup (first time):**
