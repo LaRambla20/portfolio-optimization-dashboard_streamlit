@@ -217,7 +217,7 @@ def test_convert_series_to_eur():
 
 
 def test_reconstruction_currency_column():
-    """`currency` is appended last so positional 2-column readers keep working."""
+    """`currency` is appended last and every price reader ignores it."""
     N = 12
     idx = _index_series(240, N, seed=11)
     etf = _gross_up(idx, 0.02, N).iloc[120:]
@@ -228,8 +228,6 @@ def test_reconstruction_currency_column():
 
     frame_cur, _ = build_reconstructed_frame(idx, etf, None, N, currency="EUR")
     assert list(frame_cur.columns) == ["date", "adj close", "synthetic", "recon_yield", "currency"]
-    # date/adj close must stay at positions 0-1 for build_merged_dataframe's iloc[:, :2].
-    assert list(frame_cur.columns[:2]) == ["date", "adj close"]
     assert (frame_cur["currency"] == "EUR").all()
     # Adding the column changes nothing else.
     for col in frame_plain.columns:
@@ -245,7 +243,7 @@ def test_reconstruction_currency_column():
         merged = build_merged_dataframe(["XXX_EXT"], d, suffix, pd.Timestamp("2100-01-01"))
         assert list(merged.columns) == ["date", "XXX_EXT"]
         assert len(merged) == len(frame_cur)
-    print("  reconstruction currency column: appended last, read offline, 2-col reader OK")
+    print("  reconstruction currency column: appended last, read offline, price reader OK")
 
 
 def test_real_sp500_yield():

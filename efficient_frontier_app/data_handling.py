@@ -176,11 +176,8 @@ def build_merged_dataframe(tickers, folder_path, filename_suffix, filter_date_st
     merged_df = None
     for ticker in tickers:
         file_path = os.path.join(folder_path, ticker + filename_suffix)
-        df = pd.read_csv(file_path)
-        subdf = df.iloc[:, :2].copy()
-        subdf["date"] = pd.to_datetime(subdf["date"])
-        subdf[ticker] = df["adj close"]
-        subdf = subdf[["date", ticker]]
+        df = pd.read_csv(file_path, usecols=["date", "adj close"])
+        subdf = pd.DataFrame({"date": pd.to_datetime(df["date"]), ticker: df["adj close"]})
         subdf = subdf[subdf["date"] <= filter_date_string]
         if merged_df is None:
             merged_df = subdf
@@ -322,8 +319,8 @@ def build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_y
     rows reconstructed from the index (before the ETF's first date), ``False`` for the
     real ETF rows. ``recon_yield`` carries the calibrated annual gross-up ``q_hat`` on
     synthetic rows and is blank on real rows (a single scalar, repeated only so the
-    value travels inside the CSV — the app's other readers slice the first two columns
-    or use ``usecols`` and ignore both extra columns).
+    value travels inside the CSV — the app's other readers pass ``usecols`` and ignore
+    both extra columns).
 
     Returns ``(frame, meta)`` where ``meta`` is the dict from ``synthesize_total_return``.
     """
@@ -336,8 +333,6 @@ def build_reconstructed_frame(index_prices, etf_prices, fx_prices, periods_per_y
     is_synth = frame["date"] < join_date
     frame["synthetic"] = is_synth
     frame["recon_yield"] = np.where(is_synth, q_hat, np.nan)
-    # Appended *after* the tag columns so `date`/`adj close` stay at positions 0-1 for
-    # build_merged_dataframe's positional `iloc[:, :2]` read.
     if currency is not None:
         frame["currency"] = currency
     frame["date"] = pd.to_datetime(frame["date"]).dt.strftime("%Y-%m-%d")
