@@ -503,11 +503,370 @@ def convert_series_to_eur(prices, eur_multiplier):
     return pd.Series(out["adj close"].values, index=prices.index)
 
 
+# ─────────────────────────────────────────────────────────
+# GUIDED EXTEND WIZARD — validation helpers
+# ─────────────────────────────────────────────────────────
+
+# Period name -> yfinance interval code. Shared by the download, reconstruction and wizard paths.
+YF_INTERVALS = {"daily": "1d", "weekly": "1wk", "monthly": "1mo"}
+
+# Index families whose Yahoo search results are useless, mapped to tickers verified to have
+# real downloadable history. These are *hints only*: every entry is run through probe_ticker
+# like a search result, so a stale one gets marked unusable rather than silently misleading.
+# (yf.Search for "FTSE All-World" returns only quote-only *.FGI tickers with zero history.)
+# Yahoo Search is poor at commodities: "Physical Gold" returns nothing, and "Gold index"
+# returns S&P/TSX *Global Gold* — gold **miners**, a different asset from bullion.
+CURATED_INDEX_HINTS = {
+    "gold":                [("GC=F", "Gold futures (COMEX) — spot-linked, long history"),
+                            ("IAU", "iShares Gold Trust (proxy)"),
+                            ("GLD", "SPDR Gold Shares (proxy)")],
+    "silver":              [("SI=F", "Silver futures (COMEX)")],
+    "ftse all-world":      [("VT", "Vanguard Total World — FTSE Global All Cap (proxy)")],
+    "ftse global all cap": [("VT", "Vanguard Total World — FTSE Global All Cap")],
+    "s&p 500":             [("^GSPC", "S&P 500 price index")],
+    "msci world":          [("^990100-USD-STRD", "MSCI World price index (developed only)")],
+    "msci acwi":           [("ACWI", "iShares MSCI ACWI (proxy)")],
+    "all country world":   [("ACWI", "iShares MSCI ACWI (proxy)")],
+}
+
+# Wrapper words that appear in an ETF's longName but never in an index's name.
+_NAME_NOISE = (
+    "ucits", "etf", "etc", "acc", "accumulating", "accumulation", "dist", "distributing",
+    "inc", "income", "fund", "index", "shares", "core", "plc", "usd", "eur", "gbp", "chf",
+    "hedged", "class", "a", "b", "c", "1c", "1d",
+)
+
+
+def suggest_fx_ticker(etf_currency, index_currency):
+    """Yahoo FX pair that converts the index into the ETF's currency, or None.
+
+    ``synthesize_total_return`` computes ``index / fx``, and Yahoo quotes ``ABCDEF=X`` as
+    DEF per 1 ABC. To turn an index priced in ``index_currency`` into ``etf_currency`` the
+    divisor must be *index per etf*, i.e. ``{etf}{index}=X`` — a USD index with an EUR ETF
+    needs ``EURUSD=X`` (USD per EUR). Reversing this silently inverts the FX leg.
+
+    Returns None when either currency is unknown or the two already match (no conversion).
+    """
+    if not etf_currency or not index_currency:
+        return None
+    a, b = etf_currency.strip().upper(), index_currency.strip().upper()
+    if not a or not b or a == b:
+        return None
+    return f"{a}{b}=X"
+
+
+def index_query_from_name(long_name):
+    """Reduce an ETF's longName to a searchable index name.
+
+    'Vanguard FTSE All-World UCITS ETF USD Accumulation' -> 'FTSE All-World'. Strips the
+    issuer prefix and the wrapper words that only ever appear on funds, never on indices.
+    """
+    if not long_name:
+        return ""
+    cleaned = str(long_name).replace("(", " ").replace(")", " ")
+    words = [w for w in cleaned.split() if w.strip()]
+    # Drop a leading issuer token (Vanguard, iShares, Amundi, ...) when more words follow.
+    known_issuers = {"vanguard", "ishares", "ishs", "amundi", "xtrackers", "spdr",
+                     "invesco", "lyxor", "hsbc", "ubs", "wisdomtree", "img", "imgp"}
+    if words and words[0].lower() in known_issuers:
+        words = words[1:]
+    kept = [w for w in words if w.lower().strip(".,-") not in _NAME_NOISE]
+    return " ".join(kept).strip()
+
+
+# Which gap to expect depends on whether the index leg *omits* income the fund collects.
+#   price_index : a price-return index vs an income-collecting fund -> gap is the dividend yield.
+#   same_income : the index already carries the income, or the asset pays none (gold, commodities)
+#                 -> the only gap left is fees/tracking, so it sits near zero.
+# Calibrated on real pairings: correct ones land within ±0.25% in `same_income`, while the
+# tightest *wrong* one (world equity spliced onto gold) is +0.92%.
+Q_BANDS = {
+    "price_index": (0.00, 0.06),
+    "same_income": (-0.005, 0.005),
+}
+
+
+def q_hat_verdict(q_hat, regime="price_index"):
+    """(ok, message) for a recovered yield, judged against the band for ``regime``.
+
+    ``q_hat`` is the annual return the index is *missing* versus the fund. Which value is
+    plausible depends entirely on the pairing (see :data:`Q_BANDS`): a price-return equity
+    index should be short by a dividend yield (~1.5-4%/yr), whereas an index that already
+    includes income — or an asset with none, like gold — should differ by fees alone.
+    """
+    if q_hat is None or (isinstance(q_hat, float) and np.isnan(q_hat)):
+        return False, "Could not recover a yield from the overlap."
+    low, high = Q_BANDS.get(regime, Q_BANDS["price_index"])
+    pct = q_hat * 100.0
+
+    if regime == "same_income":
+        if q_hat < low:
+            return False, (
+                f"Recovered yield is **{pct:.2f}%/yr**. These two should differ by fees alone, so "
+                f"anything below {low * 100:.1f}%/yr is more than a fee normally explains — either "
+                f"they don't track the same thing, or this fund charges more than {abs(low) * 100:.1f}%/yr "
+                f"(check its ongoing charge; a high fee alone can produce this)."
+            )
+        if q_hat > high:
+            return False, (
+                f"Recovered yield is **{pct:.2f}%/yr** — the fund grew *faster* than the index with "
+                f"no income to explain it. Nothing legitimate does that; these two are not tracking "
+                f"the same thing."
+            )
+        return True, (
+            f"Recovered yield is **{pct:.2f}%/yr** — near zero, which is what fees alone look like. "
+            f"Consistent with both sides carrying the same income."
+        )
+
+    if q_hat < low:
+        return False, (
+            f"Recovered yield is **{pct:.2f}%/yr** — negative, so the index *outperformed* the "
+            f"fund. That is not a dividend; these two are not tracking the same market. (If this "
+            f"asset pays no income at all, switch the setting above.)"
+        )
+    if q_hat > high:
+        return False, (
+            f"Recovered yield is **{pct:.2f}%/yr** — far above any real dividend yield. The gap "
+            f"between two different markets is being mistaken for dividends."
+        )
+    return True, f"Recovered yield is **{pct:.2f}%/yr** — a plausible dividend yield."
+
+
+def default_q_regime(index_probe):
+    """Pick the expected-gap regime from what the *index leg* actually is.
+
+    The fund side can't help: an accumulating equity fund and a gold ETC both report zero
+    dividends, so nothing in the data separates them — which is why the wizard offers an
+    override. The index leg is decidable:
+
+    - it pays dividends            -> its Adj Close already carries income  -> ``same_income``
+    - FUTURE / CURRENCY            -> no income exists to omit              -> ``same_income``
+    - INDEX with no dividends      -> a price index, missing the fund's yield -> ``price_index``
+    - anything else (a fund used as the index) -> Adj Close is total-return -> ``same_income``
+    """
+    if not index_probe or not index_probe.get("ok"):
+        return "price_index"
+    if index_probe.get("pays_dividends"):
+        return "same_income"
+    if (index_probe.get("quote_type") or "").upper() == "INDEX":
+        return "price_index"
+    return "same_income"
+
+
+@st.cache_data(show_spinner=False)
+def fetch_history_frame(symbol, yf_interval):
+    """Full tz-naive history frame for a Yahoo symbol; empty frame when unavailable.
+
+    The single cached download behind both :func:`fetch_price_series` and the dividend check in
+    :func:`probe_ticker` — the price column and the ``Dividends`` column come from the same
+    fetch instead of two.
+    """
+    import yfinance as yf
+
+    try:
+        hist = yf.Ticker(symbol).history(
+            start="1900-01-01", end=datetime.date.today().strftime("%Y-%m-%d"),
+            interval=yf_interval, auto_adjust=False,
+        )
+        if hist.empty:
+            return pd.DataFrame()
+        hist = hist.copy()
+        hist.index = pd.to_datetime(hist.index).tz_localize(None)
+        return hist
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def fetch_price_series(symbol, yf_interval):
+    """Adjusted-close history for a Yahoo symbol as a tz-naive Series; empty when unavailable.
+
+    Adj Close (not Close) matters: it is dividend-adjusted, so a *distributing* fund reads as
+    total return just like an accumulating one, and the calibration doesn't care which it is.
+    """
+    hist = fetch_history_frame(symbol, yf_interval)
+    if hist.empty:
+        return pd.Series(dtype="float64")
+    col = "Adj Close" if "Adj Close" in hist.columns else "Close"
+    return hist[col].dropna()
+
+
+@st.cache_data(show_spinner=False)
+def probe_ticker(symbol, yf_interval):
+    """Does this Yahoo symbol actually have downloadable history? Used by every wizard step.
+
+    Returns ``{ok, error, start, end, n_rows, currency, long_name}``. ``ok`` is False when the
+    fetch comes back empty — the case that makes a ticker look valid while being unusable
+    (a live quote with no history, e.g. AW01.FGI).
+    """
+    import yfinance as yf
+
+    out = {"ok": False, "error": None, "start": None, "end": None, "n_rows": 0,
+           "currency": None, "long_name": None, "quote_type": None, "pays_dividends": False}
+    sym = (symbol or "").strip()
+    if not sym:
+        out["error"] = "No ticker given."
+        return out
+
+    hist = fetch_history_frame(sym, yf_interval)
+    series = fetch_price_series(sym, yf_interval)
+    if series.empty:
+        out["error"] = ("Yahoo returned no history for this ticker — it may be a quote-only "
+                        "symbol, delisted, or misspelled.")
+        return out
+    if len(series) < 2:
+        out["error"] = "Only a single price point is available — not enough to splice."
+        return out
+
+    out.update(ok=True, start=series.index.min(), end=series.index.max(), n_rows=int(len(series)))
+    # Distributing funds pay out (non-zero Dividends); accumulating funds and assets with no
+    # income at all both report zero. That tells us whether this series *carries* income, which
+    # is what default_q_regime needs — it does not tell equities apart from gold.
+    if "Dividends" in hist.columns:
+        out["pays_dividends"] = bool(pd.to_numeric(hist["Dividends"], errors="coerce").fillna(0).sum() > 0)
+    try:
+        info = yf.Ticker(sym).info or {}
+        out["long_name"] = info.get("longName")
+        out["quote_type"] = info.get("quoteType")
+    except Exception:
+        pass
+    out["currency"] = detect_currency(sym, yf)
+    return out
+
+
+# Quote types worth offering as an index leg. EQUITY is deliberately absent — it floods the
+# list with individual stocks. FUTURE is what makes GC=F (gold) reachable at all.
+SEARCH_QUOTE_TYPES = ("INDEX", "ETF", "FUTURE", "CURRENCY", "MUTUALFUND")
+
+
+def _search_queries(cleaned):
+    """Query variants, most specific first.
+
+    Order is load-bearing for commodities: "Gold index" finds gold *miners*, while plain "Gold"
+    finds the bullion future — so the full name is tried before progressively shorter ones.
+    """
+    if not cleaned:
+        return []
+    queries, words = [f"{cleaned} index", cleaned], cleaned.split()
+    for drop in range(1, len(words)):
+        queries.append(" ".join(words[drop:]))
+    return queries
+
+
+@st.cache_data(show_spinner=False)
+def preview_candidate_fit(index_symbol, etf_symbol, yf_interval, periods_per_year):
+    """How well would this index extend this fund? Everything step 2 needs to rank a candidate.
+
+    Returns ``{ok, reason, extends, n_overlap, extra_years, q_hat, fx_symbol, regime,
+    verdict_ok, verdict}``.
+
+    The FX pair is **auto-derived** from the two currencies (:func:`suggest_fx_ticker`), because
+    the user doesn't choose one until the next step — and q_hat without it is badly misleading:
+    a JPY-quoted gold ETF reads -1.75%/yr unconverted versus +0.14%/yr converted, i.e. the
+    difference between "rejected" and "fine". Cheap despite the extra work: both price series are
+    already cached by the probing pass, so this is pure pandas.
+    """
+    out = {"ok": False, "reason": None, "extends": False, "n_overlap": 0, "extra_years": 0.0,
+           "q_hat": None, "fx_symbol": None, "regime": None, "verdict_ok": False, "verdict": ""}
+
+    idx_probe = probe_ticker(index_symbol, yf_interval)
+    etf_probe = probe_ticker(etf_symbol, yf_interval)
+    if not idx_probe["ok"]:
+        out["reason"] = idx_probe["error"] or "no usable history"
+        return out
+    if not etf_probe["ok"]:
+        out["reason"] = "the fund itself has no usable history"
+        return out
+
+    out["extends"] = bool(idx_probe["start"] < etf_probe["start"])
+    out["extra_years"] = max(0.0, (etf_probe["start"] - idx_probe["start"]).days / 365.25)
+
+    idx_s = fetch_price_series(index_symbol, yf_interval)
+    etf_s = fetch_price_series(etf_symbol, yf_interval)
+    out["n_overlap"] = int(len(idx_s.index.intersection(etf_s.index)))
+    if out["n_overlap"] < 2:
+        out["reason"] = "shares fewer than 2 dates with the fund"
+        return out
+    if not out["extends"]:
+        out["reason"] = f"starts {idx_probe['start'].date()} — no earlier history to add"
+        return out
+
+    out["fx_symbol"] = suggest_fx_ticker(etf_probe["currency"], idx_probe["currency"])
+    fx_s = fetch_price_series(out["fx_symbol"], yf_interval) if out["fx_symbol"] else None
+    if out["fx_symbol"] and (fx_s is None or fx_s.empty):
+        out["fx_symbol"] = None   # rate unavailable; fall back to no conversion
+        fx_s = None
+    try:
+        out["q_hat"] = float(synthesize_total_return(idx_s, etf_s, fx_s, periods_per_year)["q_hat"])
+    except Exception as e:
+        out["reason"] = f"couldn't calibrate ({type(e).__name__})"
+        return out
+
+    out["regime"] = default_q_regime(idx_probe)
+    out["verdict_ok"], out["verdict"] = q_hat_verdict(out["q_hat"], out["regime"])
+    out["ok"] = True
+    return out
+
+
+@st.cache_data(show_spinner=False)
+def suggest_index_candidates(etf_long_name, yf_interval, max_results=6, etf_symbol=""):
+    """Candidate index tickers for an ETF, each verified against real history.
+
+    Merges :data:`CURATED_INDEX_HINTS` with a ``yf.Search`` on the cleaned fund name, then runs
+    **every** candidate through :func:`probe_ticker`. Search alone is not enough: its top hits
+    for the common European ETFs are quote-only tickers with no history.
+
+    Returns a list of ``{symbol, name, source, probe}`` with usable candidates first.
+    """
+    import yfinance as yf
+
+    query = index_query_from_name(etf_long_name)
+    seen, candidates = set(), []
+
+    lowered = (etf_long_name or "").lower()
+    for family, entries in CURATED_INDEX_HINTS.items():
+        if family in lowered:
+            for sym, label in entries:
+                if sym.upper() not in seen:
+                    seen.add(sym.upper())
+                    candidates.append({"symbol": sym, "name": label, "source": "curated"})
+
+    if etf_symbol:
+        seen.add(etf_symbol.strip().upper())  # searching a fund's name returns the fund itself
+
+    for attempt in _search_queries(query):
+        found = False
+        try:
+            for quote in (yf.Search(attempt, max_results=max_results).quotes or []):
+                sym = (quote.get("symbol") or "").strip()
+                if not sym or sym.upper() in seen:
+                    continue
+                if quote.get("quoteType") not in SEARCH_QUOTE_TYPES:
+                    continue
+                seen.add(sym.upper())
+                candidates.append({
+                    "symbol": sym,
+                    "name": quote.get("shortname") or quote.get("longname") or "",
+                    "source": "search",
+                })
+                found = True
+        except Exception:
+            pass  # search is a convenience; manual entry always remains available
+        if found:
+            break  # a more specific query matched; don't dilute it with vaguer ones
+
+    del candidates[8:]  # probing costs a request each — keep the step responsive
+    for cand in candidates:
+        cand["probe"] = probe_ticker(cand["symbol"], yf_interval)
+    candidates.sort(key=lambda c: (not c["probe"]["ok"], c["source"] != "curated"))
+    return candidates
+
+
 def run_download(tickers, intervals, columns_to_drop, output_dir, log_queue,
                  convert_to_eur=True):
     import yfinance as yf
 
-    interval_map = {"daily": "1d", "weekly": "1wk", "monthly": "1mo"}
+    interval_map = YF_INTERVALS
     suffix_map   = {"daily": "_data_daily.csv", "weekly": "_data_weekly.csv", "monthly": "_data_monthly.csv"}
 
     if not os.path.exists(output_dir):
@@ -572,7 +931,10 @@ def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue, conv
     """Download price-return indices + accumulating ETFs and splice them into
     total-return histories, saving each as ``{etf}_EXT_data_{period}.csv``.
 
-    ``jobs`` is a list of dicts ``{"index": str, "etf": str, "fx": str|""}``. For each
+    ``jobs`` is a list of dicts ``{"index": str, "etf": str, "fx": str|"", "regime": str|None}``.
+    ``regime`` selects which q_hat band the log warning judges against (see :data:`Q_BANDS`);
+    omit it and one is detected, so the warning can never contradict the wizard's verdict on
+    the same pairing. For each
     job × interval it downloads the index (price-return), the ETF (total-return) and,
     if given, the FX pair (USD-per-EUR), then calls :func:`build_reconstructed_frame`.
     Mirrors :func:`run_download`'s log/progress contract (``__DONE__done/total``).
@@ -585,7 +947,7 @@ def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue, conv
     """
     import yfinance as yf
 
-    interval_map = {"daily": "1d", "weekly": "1wk", "monthly": "1mo"}
+    interval_map = YF_INTERVALS
     suffix_map   = {"daily": "_data_daily.csv", "weekly": "_data_weekly.csv", "monthly": "_data_monthly.csv"}
     ppy_map      = {"daily": 252, "weekly": 52, "monthly": 12}
 
@@ -653,14 +1015,17 @@ def run_total_return_reconstruction(jobs, intervals, output_dir, log_queue, conv
                     f"✅ Saved {out_path}  ({len(frame)} rows, {n_synth} synthetic before {join_str}, "
                     f"q={q*100:.2f}%/yr, history from {start_str})"
                 )
-                # A recovered yield outside a plausible dividend band almost always means
-                # the index doesn't track the same underlying as the ETF (or a data quirk:
-                # splits, wrong currency, distributing-vs-accumulating share class).
-                if not (0.0 <= q <= 0.06):
+                # Judge the recovered yield with the *same* helper and band the wizard used, so
+                # the log can't call a pairing implausible right after the wizard passed it. A
+                # gold future vs a gold ETC legitimately lands near -0.2%/yr, which the old fixed
+                # 0-6% band flagged as an error.
+                regime = job.get("regime") or default_q_regime(probe_ticker(index_sym, yf_interval))
+                verdict_ok, verdict_msg = q_hat_verdict(q, regime)
+                if not verdict_ok:
                     log_queue.put(
-                        f"⚠️  {etf_sym}_EXT: q={q*100:.2f}%/yr is outside the usual 0–4% dividend "
-                        f"band — check that '{index_sym}' tracks the same underlying as '{etf_sym}' "
-                        f"and that the FX ticker is correct. The series was still saved."
+                        f"⚠️  {etf_sym}_EXT: {verdict_msg} Check that '{index_sym}' tracks the same "
+                        f"underlying as '{etf_sym}' and that the FX ticker is correct. "
+                        f"The series was still saved."
                     )
             except Exception as e:
                 log_queue.put(f"❌ Error reconstructing {tag}: {e}")

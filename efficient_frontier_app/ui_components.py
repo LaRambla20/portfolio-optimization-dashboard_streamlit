@@ -40,8 +40,18 @@ from data_handling import (
     evaluate_CAGR,
     evaluate_return_metrics,
     load_asset_series,
+    YF_INTERVALS,
+    fetch_price_series,
+    probe_ticker,
+    suggest_index_candidates,
+    preview_candidate_fit,
+    suggest_fx_ticker,
+    q_hat_verdict,
+    default_q_regime,
+    Q_BANDS,
+    synthesize_total_return,
 )
-from descriptions import render_section_help
+from descriptions import DESCRIPTIONS, render_section_help
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -189,6 +199,427 @@ def _mixed_calendar_note(mixed_calendar, seven_day_tickers):
 # ─────────────────────────────────────────────────────────────────
 # SECTION 1 — LOAD DATA (split detection + anomaly warnings + data availability)
 # ─────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────
+# GUIDED EXTEND WIZARD (§ sidebar → modal dialog)
+# ─────────────────────────────────────────────────────────────────
+#
+# Four validated steps: ETF → index → currency → confirm. Each step probes Yahoo and only
+# enables its Continue button once the input actually works, so a dead ticker is caught here
+# rather than after a reconstruction run produces nothing.
+#
+# Streamlit constraints this respects (see CLAUDE.md):
+#   - st.dialog is a *fragment*: widget clicks rerun only this function, not the whole script.
+#   - st.sidebar cannot be called in here — config arrives via st.session_state["wiz_cfg"].
+#   - Elements created OUTSIDE the dialog are additive across dialog reruns, so the actual
+#     reconstruction is queued into session_state and run by the main script after this closes.
+
+WIZ_STEPS = ["1 · Fund", "2 · Index", "3 · Currency", "4 · Confirm"]
+_WIZ_PPY = {"daily": 252, "weekly": 52, "monthly": 12}
+
+# Step-3 conversion modes. Pre-selected from the two currencies, overridable by the user.
+FX_MODE_PAIR = "Choose a conversion pair"
+FX_MODE_NONE = "Proceed without a conversion pair"
+
+
+WIZ_INPUT_KEYS = ("wiz_etf_in", "wiz_idx_in", "wiz_fx_in", "wiz_fx_mode", "wiz_regime_in")
+
+
+def wiz_reset():
+    """Clear the wizard's state *and* its widget keys (keyed widgets outlive the state dict)."""
+    st.session_state.pop("wiz", None)
+    for key in WIZ_INPUT_KEYS:
+        st.session_state.pop(key, None)
+
+
+def wiz_dismissed():
+    """Clear the open flag when the user closes the modal with the ✕.
+
+    Dismissing is only a client-side close: `wiz_open` stays True, so the *next* full script
+    rerun — editing the portfolio table, nudging any sidebar widget — re-renders the dialog and
+    it pops back up unwanted. `st.dialog(on_dismiss=...)` is the only hook that fires on the ✕,
+    so the flag has to be cleared here. (Progress itself is reset by the launch button, which
+    calls `wiz_reset()` every time.)
+    """
+    st.session_state["wiz_open"] = False
+
+
+def _wiz():
+    """The wizard's single state dict (one `wiz_reset()` resets the whole flow)."""
+    if "wiz" not in st.session_state:
+        st.session_state.wiz = {"step": 1}
+    return st.session_state.wiz
+
+
+def _wiz_seed(key, value):
+    """Seed a keyed text_input once.
+
+    A widget with `key=` ignores its `value=` argument on every rerun after the first, so the
+    only way to fill one programmatically (the "Use this" buttons) is to write session_state
+    directly. Seeding here, and writing the key in those buttons, keeps both paths consistent.
+    """
+    if key not in st.session_state:
+        st.session_state[key] = value or ""
+
+
+def _wiz_span(probe):
+    return f"{probe['start'].date()} → {probe['end'].date()}"
+
+
+def _wiz_show_probe(label, ticker, probe):
+    """Render one ticker's identity card: name, currency, history span, row count."""
+    st.markdown(f"**{label}: `{ticker}`**")
+    if probe.get("long_name"):
+        st.caption(probe["long_name"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Currency", probe["currency"] or "unknown")
+    c2.metric("History", _wiz_span(probe))
+    c3.metric("Rows", f"{probe['n_rows']:,}")
+    st.caption(f"Income: {_wiz_income_label(probe)}")
+    if not probe["currency"]:
+        st.caption("⚠️ Yahoo doesn't report a currency for this symbol — common for indices. "
+                   "You can still continue; you'll pick the conversion rate yourself.")
+
+
+# Plain-language regime labels; the dict keys are what q_hat_verdict / Q_BANDS expect.
+WIZ_REGIME_LABELS = {
+    "price_index": "The index leaves out dividends the fund collects",
+    "same_income": "Both carry the same income, or the asset pays none (gold, commodities)",
+}
+
+
+def _wiz_income_label(probe):
+    """Describe what a leg does with income — the fact behind the auto-detected regime."""
+    if probe.get("pays_dividends"):
+        return "pays dividends out (distributing) — its adjusted prices already include them"
+    if (probe.get("quote_type") or "").upper() == "INDEX":
+        return "a price index — tracks prices only, dividends excluded"
+    if (probe.get("quote_type") or "").upper() in ("FUTURE", "CURRENCY"):
+        return "no income exists for this instrument"
+    return "pays no dividends out — either accumulating (reinvested) or an asset with no income"
+
+
+def _wiz_nav(back_to=None, forward=None, forward_label="Continue →", forward_ok=False,
+             blocked_reason=None):
+    """Back / Continue row. Continue is disabled until this step's gate passes."""
+    left, right = st.columns(2)
+    if back_to is not None and left.button("← Back", width="stretch", key=f"wiz_back_{back_to}"):
+        _wiz()["step"] = back_to
+        st.rerun(scope="fragment")
+    if right.button(forward_label, width="stretch", type="primary",
+                    disabled=not forward_ok, key=f"wiz_fwd_{forward}"):
+        _wiz()["step"] = forward
+        st.rerun(scope="fragment")
+    if not forward_ok and blocked_reason:
+        st.caption(blocked_reason)
+
+
+@st.dialog("🧬 Extend an ETF's price history", width="large", on_dismiss=wiz_dismissed)
+def render_extend_wizard():
+    w = _wiz()
+    cfg = st.session_state.get("wiz_cfg", {})
+    yf_interval = YF_INTERVALS[cfg.get("primary", "monthly")]
+
+    st.caption(
+        f"Checking every ticker against Yahoo at the **{cfg.get('primary', 'monthly')}** interval. "
+        f"Nothing is downloaded to disk until the final step."
+    )
+    st.progress((w["step"] - 1) / 3, text=" · ".join(
+        f"**{s}**" if i + 1 == w["step"] else s for i, s in enumerate(WIZ_STEPS)))
+    st.divider()
+
+    # ── STEP 1 — the fund to extend ────────────────────────────────
+    if w["step"] == 1:
+        st.markdown("#### Which fund do you want to extend?")
+        st.caption("The accumulating ETF whose history is too short. e.g. `VWCE.MI`, `SXR8.DE`")
+        _wiz_seed("wiz_etf_in", w.get("etf", ""))
+        ticker = st.text_input("Fund ticker", placeholder="SXR8.DE",
+                               key="wiz_etf_in").strip()
+        if st.button("Check fund", key="wiz_etf_check") and ticker:
+            with st.spinner(f"Looking up {ticker}…"):
+                w["etf"], w["etf_probe"] = ticker, probe_ticker(ticker, yf_interval)
+                w.pop("cands", None)
+            st.rerun(scope="fragment")
+
+        probe = w.get("etf_probe")
+        if probe and w.get("etf") == ticker:
+            if probe["ok"]:
+                _wiz_show_probe("Fund", ticker, probe)
+            else:
+                st.error(probe["error"])
+        ok = bool(probe and probe["ok"] and w.get("etf") == ticker)
+        _wiz_nav(forward=2, forward_ok=ok,
+                 blocked_reason="Enter a fund ticker and press **Check fund** to continue.")
+
+    # ── STEP 2 — the index that supplies the older history ─────────
+    elif w["step"] == 2:
+        etf_probe = w["etf_probe"]
+        st.markdown("#### Which index should supply the older history?")
+        name = etf_probe.get("long_name") or w["etf"]
+        st.info(f"**{w['etf']}** is *{name}* — look for an index tracking that same market.")
+
+        ppy = _WIZ_PPY[cfg.get("primary", "monthly")]
+        if "cands" not in w:
+            with st.spinner("Searching Yahoo for matching indices, checking history and fit…"):
+                w["cands"] = suggest_index_candidates(etf_probe.get("long_name") or w["etf"],
+                                                      yf_interval, etf_symbol=w["etf"])
+        cands = w.get("cands") or []
+        # Rank by what actually matters: a plausible fit first, then merely-usable history.
+        rows = [(c, preview_candidate_fit(c["symbol"], w["etf"], yf_interval, ppy)) for c in cands]
+        rows.sort(key=lambda cf: (not cf[1]["verdict_ok"], not cf[1]["extends"],
+                                  not cf[1]["ok"], -cf[1]["extra_years"]))
+
+        if rows:
+            st.markdown("**Candidates found** — each one checked for real history *and* for how "
+                        "well it fits your fund:")
+            for c, fit in rows:
+                pr = c["probe"]
+                if not pr["ok"]:
+                    st.markdown(f"❌ `{c['symbol']}` — {c['name']}  \n"
+                                f"<span style='opacity:.6'>no usable history</span>",
+                                unsafe_allow_html=True)
+                    continue
+                # Usable history, but does it extend, and does the fit hold up?
+                if not fit["extends"]:
+                    detail = f"⚠️ {fit['reason']}"
+                elif fit["ok"]:
+                    mark = "✓ plausible" if fit["verdict_ok"] else "✗ implausible"
+                    conv = (f"via `{fit['fx_symbol']}`" if fit["fx_symbol"]
+                            else "no conversion needed")
+                    detail = f"**q̂ {fit['q_hat'] * 100:+.2f}%/yr** {mark} · {conv}"
+                else:
+                    detail = f"⚠️ {fit['reason']}"
+                icon = "✅" if fit["verdict_ok"] else "⚠️"
+                col_a, col_b = st.columns([3, 1])
+                col_a.markdown(
+                    f"{icon} `{c['symbol']}` — {c['name']}  \n"
+                    f"<span style='opacity:.7'>{_wiz_span(pr)} · {pr['n_rows']:,} rows</span>  \n"
+                    f"<span style='opacity:.85'>{detail}</span>",
+                    unsafe_allow_html=True)
+                if col_b.button("Use this", key=f"wiz_use_{c['symbol']}", width="stretch"):
+                    st.session_state["wiz_idx_in"] = c["symbol"]
+                    st.rerun(scope="fragment")
+
+            st.caption(
+                "**q̂ is a preview.** Each index was converted into the fund's currency using the "
+                "rate pair shown on its row, derived automatically from the two currencies — you "
+                "choose or skip that conversion in the next step, which can move the number."
+            )
+            if not any(f["ok"] for _, f in rows):
+                if any(f["extends"] is False and c["probe"]["ok"] for c, f in rows):
+                    st.info(f"None of these start before **{etf_probe['start'].date()}**, so none "
+                            f"of them can extend {w['etf']}. Try a different search term or enter "
+                            f"a ticker manually below.")
+                else:
+                    st.warning("None of these are usable. Try a different search term, or enter a "
+                               "ticker manually below.")
+
+        with st.expander("📖 What is the recovered yield (q̂)?"):
+            st.markdown(DESCRIPTIONS["recovered_yield"])
+        with st.expander("📖 How to find tickers"):
+            st.markdown(DESCRIPTIONS["finding_tickers"])
+
+        _wiz_seed("wiz_idx_in", w.get("index", ""))
+        ticker = st.text_input("Index ticker", placeholder="^GSPC",
+                               key="wiz_idx_in").strip()
+        if st.button("Check index", key="wiz_idx_check") and ticker:
+            with st.spinner(f"Looking up {ticker}…"):
+                w["index"], w["index_probe"] = ticker, probe_ticker(ticker, yf_interval)
+                # A new index leg invalidates both the detected regime and the suggested rate.
+                w.pop("regime", None)
+                w.pop("fx", None)
+                for k in ("wiz_regime_in", "wiz_fx_in", "wiz_fx_mode"):
+                    st.session_state.pop(k, None)
+            st.rerun(scope="fragment")
+
+        ok, reason = False, "Choose or enter an index ticker, then press **Check index**."
+        probe = w.get("index_probe")
+        if probe and w.get("index") == ticker:
+            if not probe["ok"]:
+                st.error(probe["error"])
+                reason = "This ticker has no usable history — pick another."
+            else:
+                _wiz_show_probe("Index", ticker, probe)
+                etf_s = fetch_price_series(w["etf"], yf_interval)
+                idx_s = fetch_price_series(ticker, yf_interval)
+                overlap = idx_s.index.intersection(etf_s.index)
+                adds = probe["start"] < etf_probe["start"]
+                if len(overlap) < 2:
+                    st.error("This index and the fund share fewer than 2 dates, so the missing "
+                             "dividends can't be calibrated. They likely trade on different "
+                             "calendars or don't overlap at all.")
+                    reason = "No usable overlap with the fund."
+                elif not adds:
+                    st.error(f"This index starts {probe['start'].date()}, which is **not before** "
+                             f"the fund's {etf_probe['start'].date()} — it would add no history.")
+                    reason = "This index is not longer than the fund."
+                else:
+                    gained = (etf_probe["start"] - probe["start"]).days / 365.25
+                    st.success(f"Good pairing so far: **{len(overlap)} overlapping points** to "
+                               f"calibrate on, and about **{gained:.1f} extra years** of history.")
+                    fit = preview_candidate_fit(ticker, w["etf"], yf_interval, ppy)
+                    if fit["ok"]:
+                        conv = (f"assumes `{fit['fx_symbol']}`" if fit["fx_symbol"]
+                                else "no conversion needed")
+                        (st.info if fit["verdict_ok"] else st.warning)(
+                            f"**q̂ {fit['q_hat'] * 100:+.2f}%/yr** — "
+                            f"{'plausible' if fit['verdict_ok'] else 'implausible'} for this kind "
+                            f"of pairing. *Preview · {conv}; confirmed at the last step.*"
+                        )
+                    ok = True
+        _wiz_nav(back_to=1, forward=3, forward_ok=ok, blocked_reason=reason)
+
+    # ── STEP 3 — currency conversion ───────────────────────────────
+    elif w["step"] == 3:
+        etf_ccy = w["etf_probe"]["currency"]
+        idx_ccy = w["index_probe"]["currency"]
+        st.markdown("#### Do the two need a currency conversion?")
+        c1, c2 = st.columns(2)
+        c1.metric(f"Fund · {w['etf']}", etf_ccy or "unknown")
+        c2.metric(f"Index · {w['index']}", idx_ccy or "unknown")
+
+        suggested = suggest_fx_ticker(etf_ccy, idx_ccy)
+        same_ccy = bool(etf_ccy and idx_ccy and etf_ccy.upper() == idx_ccy.upper())
+        if same_ccy:
+            st.success(f"Both are priced in **{etf_ccy}** — no conversion needed.")
+        elif suggested:
+            st.info(f"The index is in **{idx_ccy}** but the fund is in **{etf_ccy}**, so the index "
+                    f"must be converted first — otherwise the exchange-rate drift gets counted as "
+                    f"dividends. The rate you need is **`{suggested}`**, already filled in below "
+                    f"(it is also the pair the q̂ preview used).")
+        else:
+            st.warning("Yahoo doesn't report a currency for one of these, so no rate can be "
+                       "suggested. If they are already in the same currency, choose *proceed "
+                       "without* below.")
+
+        # Default to whichever mode is right for these two currencies; the user can override.
+        _wiz_seed("wiz_fx_mode", FX_MODE_NONE if same_ccy else FX_MODE_PAIR)
+        modes = [FX_MODE_PAIR, FX_MODE_NONE]
+        mode = st.radio("How should the currencies be handled?", options=modes,
+                        index=modes.index(st.session_state["wiz_fx_mode"]), key="wiz_fx_mode")
+
+        ok, reason = False, None
+        if mode == FX_MODE_NONE:
+            w["fx"] = ""
+            ok = True
+            if not same_ccy:
+                st.warning(
+                    f"The two are in **different currencies** ({idx_ccy or '?'} vs "
+                    f"{etf_ccy or '?'}). Without a conversion the exchange-rate drift is folded "
+                    f"into the recovered yield, so q̂ at the next step will not mean what it says."
+                )
+        else:
+            # Pre-filled with the derived pair: this is a *computed* suggestion, not autofill.
+            _wiz_seed("wiz_fx_in", w.get("fx") or suggested or "")
+            ticker = st.text_input("Exchange-rate ticker", placeholder="EURUSD=X",
+                                   key="wiz_fx_in").strip()
+            reason = "Press **Check rate** to verify the pair before continuing."
+            if st.button("Check rate", key="wiz_fx_check") and ticker:
+                with st.spinner(f"Looking up {ticker}…"):
+                    w["fx"], w["fx_probe"] = ticker, probe_ticker(ticker, yf_interval)
+                st.rerun(scope="fragment")
+            probe = w.get("fx_probe")
+            if probe and w.get("fx") == ticker and ticker:
+                if not probe["ok"]:
+                    st.error(probe["error"])
+                    reason = "That rate ticker has no usable history."
+                else:
+                    _wiz_show_probe("Rate", ticker, probe)
+                    # The splice back-fills the earliest rate into anything older, which
+                    # silently invents a flat exchange rate for those years. Say so.
+                    idx_start = w["index_probe"]["start"]
+                    if probe["start"] > idx_start:
+                        st.warning(
+                            f"This rate only goes back to **{probe['start'].date()}**, but the index "
+                            f"starts **{idx_start.date()}**. Everything before the rate begins will "
+                            f"reuse the earliest rate as a flat value — those early years are an "
+                            f"approximation, not a real conversion."
+                        )
+                    ok = True
+        _wiz_nav(back_to=2, forward=4, forward_ok=ok, blocked_reason=reason)
+
+    # ── STEP 4 — recovered yield, then run ─────────────────────────
+    else:
+        st.markdown("#### Does the pairing hold up?")
+        etf_s = fetch_price_series(w["etf"], yf_interval)
+        idx_s = fetch_price_series(w["index"], yf_interval)
+        fx_s = fetch_price_series(w["fx"], yf_interval) if w.get("fx") else None
+        ppy = _WIZ_PPY[cfg.get("primary", "monthly")]
+
+        try:
+            meta = synthesize_total_return(idx_s, etf_s, fx_s, ppy)
+            q_hat = meta["q_hat"]
+            err = None
+        except Exception as e:
+            meta, q_hat, err = None, None, str(e)
+
+        if err:
+            st.error(f"Couldn't calibrate: {err}")
+            _wiz_nav(back_to=3, forward=4, forward_ok=False)
+            return
+
+        # Which gap is plausible depends on the pairing. Auto-detect from the index leg, but let
+        # the user correct it: nothing in the data separates an accumulating equity fund from a
+        # gold ETC (both report zero dividends), so a wrong guess must never be a dead end.
+        detected = default_q_regime(w["index_probe"])
+        if "regime" not in w:
+            w["regime"] = detected
+        options = list(WIZ_REGIME_LABELS)
+        picked = st.radio(
+            "What gap should we expect between the index and the fund?",
+            options=options,
+            index=options.index(w["regime"]),
+            format_func=lambda k: WIZ_REGIME_LABELS[k],
+            key="wiz_regime_in",
+        )
+        if picked != w["regime"]:
+            w["regime"] = picked
+            st.rerun(scope="fragment")
+        low, high = Q_BANDS[w["regime"]]
+        st.caption(
+            f"{'Auto-detected' if w['regime'] == detected else 'Changed from the auto-detected setting'}"
+            f" · expected range **{low * 100:+.1f}% to {high * 100:+.1f}%/yr**  \n"
+            f"Fund `{w['etf']}` — {_wiz_income_label(w['etf_probe'])}.  \n"
+            f"Index `{w['index']}` — {_wiz_income_label(w['index_probe'])}."
+        )
+
+        ok, message = q_hat_verdict(q_hat, w["regime"])
+        # No `delta=`: st.metric renders a direction arrow for it, and a non-numeric label
+        # ("implausible") always draws an *up* arrow — actively misleading beside a negative
+        # yield. The coloured verdict box below carries the meaning instead.
+        st.metric("Recovered yield (q̂)", f"{q_hat * 100:.2f}%/yr")
+        (st.success if ok else st.error)(message)
+
+        st.markdown("**What you'll get**")
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Extended history", f"{meta['series'].index.min().date()}")
+        r2.metric("Reconstructed rows", f"{(meta['series'].index < meta['join_date']).sum():,}")
+        r3.metric("Joins the fund", f"{meta['join_date'].date()}")
+        st.caption(
+            f"Saved as `{w['etf']}_EXT` for the interval(s) you picked "
+            f"({', '.join(cfg.get('intervals', []))}). Add that ticker to **My Portfolio** to use it."
+        )
+
+        left, right = st.columns(2)
+        if left.button("← Back", width="stretch", key="wiz_back_3"):
+            w["step"] = 3
+            st.rerun(scope="fragment")
+        if right.button("🧬  Reconstruct", width="stretch", type="primary", disabled=not ok,
+                        key="wiz_run"):
+            # Queue the job and close: the progress UI must live in the main script, because
+            # elements created outside a dialog accumulate across the dialog's own reruns.
+            st.session_state["recon_job"] = {
+                "index": w["index"], "etf": w["etf"], "fx": w.get("fx", ""),
+                "regime": w["regime"],   # the runner's log warning must agree with this verdict
+            }
+            wiz_reset()
+            st.session_state["wiz_open"] = False
+            st.rerun(scope="app")
+        if not ok:
+            st.caption("Reconstruct stays disabled while the recovered yield is implausible — "
+                       "go back and pair the fund with an index for the same market.")
+
 
 def render_load_etf_data(tickers, split_events, anomaly_warnings, data_availability,
                          synthetic_info=None, currency_info=None):

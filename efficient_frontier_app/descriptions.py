@@ -690,6 +690,42 @@ for dividends and every figure comes out wrong. The run log reports the recovere
 outside roughly 0–4%/yr means the pair is mismatched.
 """,
 
+    "recovered_yield": r"""
+**Recovered yield (q̂) — the check that says whether the pairing is sound**
+
+Over the years where the fund and the index both exist, q̂ measures how much faster the **fund** grew:
+`f = (1 + fund growth) / (1 + index growth)`, and `q̂ = f − 1`. It is the annual return the index is
+missing.
+
+*Why a gap should exist at all:* a **price-return** index tracks share prices only and throws away the
+dividends those shares pay. The fund keeps them. So the fund should grow faster, and the gap is the
+dividends — normally about **1.5–4%/yr** for shares.
+
+*But not every pairing works that way.* If the index already includes income — or if the asset simply
+has none, like gold — there are no missing dividends and the two should track each other almost
+exactly. The only thing left to separate them is the fund's **fee**, which makes q̂ slightly
+*negative*. That is why the wizard asks which kind of pairing you have:
+
+- **The index leaves out dividends the fund collects** → expect **0% to +6%/yr**. Anything negative
+  means the index *beat* the fund, which dividends cannot explain: the two track different markets.
+  (Pairing an S&P 500 index with a world fund lands here, and fails.)
+- **Both carry the same income, or the asset pays none** → expect **−0.5% to +0.5%/yr**. Gold against
+  a gold fund sits here: q̂ comes out around −0.2%, which is just the fund's charge. A clearly
+  *positive* value is the warning sign — a fund cannot outgrow its own index with no income to
+  explain it.
+
+The wizard picks the setting for you and shows why, but you can change it — nothing in the data tells
+a dividend-reinvesting share fund apart from a gold ETC, since neither pays anything out.
+
+*Does it matter whether the fund is accumulating or distributing?* **No.** Accumulating funds reinvest
+dividends internally; distributing funds pay them to you. The app uses **dividend-adjusted** prices,
+which add distributions back in, so both read as total return and the calibration is unaffected.
+
+*When it fails, don't force it.* The fix is to pair the fund with an index tracking the **same market**
+— not to widen the band. The one honest exception: a fund with an unusually high ongoing charge
+(above ~0.5%/yr) can push q̂ below the lower edge of the near-zero range on its own.
+""",
+
 }
 
 

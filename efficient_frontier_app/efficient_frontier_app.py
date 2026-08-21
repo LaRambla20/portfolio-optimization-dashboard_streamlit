@@ -35,6 +35,8 @@ from ui_components import (
     render_monte_carlo,
     render_scipy_ef,
     render_rolling_returns,
+    render_extend_wizard,
+    wiz_reset,
 )
 
 # ─────────────────────────────────────────────────────────
@@ -103,34 +105,12 @@ with st.sidebar.expander("Get data settings", expanded=False):
             placeholder="VWCE.MI\nBTC-EUR\nDBMF",
             help="One ticker per line. They don't have to match your portfolio.",
         )
-        recon_jobs_edited = None
     else:
         dl_tickers_raw = ""
-        if "recon_jobs_df" not in st.session_state:
-            st.session_state.recon_jobs_df = pd.DataFrame({
-                "Index ticker":     pd.Series(dtype="str"),
-                "Calibrate vs ETF": pd.Series(dtype="str"),
-                "FX ticker":        pd.Series(dtype="str"),
-            })
-        # NOTE: do *not* write the returned frame back into st.session_state.recon_jobs_df.
-        # With key= set, the editor persists edits as a diff against this stable seed;
-        # reassigning it moves the baseline underneath the widget and drops a freshly-typed
-        # row until it is entered twice — the same trap documented on the portfolio editor.
-        recon_jobs_edited = st.data_editor(
-            st.session_state.recon_jobs_df,
-            num_rows="dynamic",
-            width="stretch",
-            column_config={
-                "Index ticker": st.column_config.TextColumn(
-                    "Index", help="Long-history index, e.g. ^GSPC"),
-                "Calibrate vs ETF": st.column_config.TextColumn(
-                    "ETF", help="The fund to extend, e.g. SXR8.DE"),
-                "FX ticker": st.column_config.TextColumn(
-                    "FX", help="Only if the index is priced in another currency, e.g. EURUSD=X"),
-            },
-            key="recon_editor",
+        st.caption(
+            "A guided setup checks the fund, the index and the exchange rate against Yahoo "
+            "one step at a time, so a ticker that won't work is caught before anything runs."
         )
-        st.caption("Press **+** to add a row — e.g. `^GSPC` · `SXR8.DE` · `EURUSD=X`")
 
     dl_intervals = st.multiselect(
         "Intervals to fetch",
@@ -146,10 +126,12 @@ with st.sidebar.expander("Get data settings", expanded=False):
             f"add \"{data_period}\", or Run Analysis will report a missing file."
         )
 
-    dl_button = st.button(
-        "⬇️  Download" if dl_mode == DL_MODE_PLAIN else "🧬  Download & extend",
-        width="stretch",
-    )
+    if dl_mode == DL_MODE_PLAIN:
+        dl_button = st.button("⬇️  Download", width="stretch")
+        wizard_button = False
+    else:
+        dl_button = False
+        wizard_button = st.button("🧬  Start guided setup", width="stretch", type="primary")
 
     with st.expander("⚙️ Advanced"):
         dl_columns_to_drop = st.multiselect(
@@ -366,11 +348,6 @@ else:
 # GET DATA — job runner
 # ─────────────────────────────────────────────────────────
 
-def cell_text(value):
-    """A data_editor cell as clean text ('' for the None/NaN a fresh row yields)."""
-    return "" if value is None or pd.isna(value) else str(value).strip()
-
-
 def run_job_with_progress(title, target, args, kwargs, total_tasks, done_message):
     """Run a backend job on a thread, streaming its log queue into a live progress UI.
 
@@ -430,27 +407,41 @@ if dl_button:
                 "Download complete.",
             )
 
+# ─────────────────────────────────────────────────────────
+# GUIDED EXTEND WIZARD
+# ─────────────────────────────────────────────────────────
+
+if wizard_button:
+    if not dl_intervals:
+        st.warning("Select at least one interval to fetch before starting the guided setup.")
     else:
-        recon_jobs = [
-            {
-                "index": cell_text(r["Index ticker"]),
-                "etf":   cell_text(r["Calibrate vs ETF"]),
-                "fx":    cell_text(r.get("FX ticker")),
-            }
-            for _, r in recon_jobs_edited.iterrows()
-            if cell_text(r["Index ticker"]) and cell_text(r["Calibrate vs ETF"])
-        ]
-        if not recon_jobs:
-            st.warning("Add at least one row with both an index ticker and an ETF.")
-        else:
-            run_job_with_progress(
-                "🧬 Downloading & Extending History",
-                run_total_return_reconstruction,
-                (recon_jobs, dl_intervals, output_dir),
-                {"convert_to_eur": not dl_keep_native},
-                len(recon_jobs) * len(dl_intervals),
-                "Done — add the new `..._EXT` ticker(s) to **My Portfolio** to analyse them.",
-            )
+        # The dialog can't read st.sidebar, so snapshot what it needs. The "primary" interval is
+        # the one it validates and previews q_hat at; the run still covers every chosen interval.
+        st.session_state["wiz_cfg"] = {
+            "intervals": dl_intervals,
+            "primary": data_period if data_period in dl_intervals else dl_intervals[0],
+            "convert_to_eur": not dl_keep_native,
+        }
+        wiz_reset()
+        st.session_state["wiz_open"] = True
+
+if st.session_state.get("wiz_open"):
+    render_extend_wizard()
+
+# Queued by the wizard's final button; run out here because elements created outside a dialog
+# accumulate across the dialog's own reruns.
+queued_job = st.session_state.pop("recon_job", None)
+if queued_job:
+    cfg = st.session_state.get("wiz_cfg", {})
+    job_intervals = cfg.get("intervals", [data_period])
+    run_job_with_progress(
+        "🧬 Downloading & Extending History",
+        run_total_return_reconstruction,
+        ([queued_job], job_intervals, dl_output_dir.strip() or folder_path),
+        {"convert_to_eur": cfg.get("convert_to_eur", True)},
+        len(job_intervals),
+        f"Done — add `{queued_job['etf']}_EXT` to **My Portfolio** to analyse it.",
+    )
 
 # ─────────────────────────────────────────────────────────
 # RUN BUTTON
