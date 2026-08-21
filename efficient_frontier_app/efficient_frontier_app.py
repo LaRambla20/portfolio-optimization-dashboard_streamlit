@@ -470,7 +470,7 @@ for ticker in tickers:
 if missing_files:
     st.error("The following CSV files were not found:\n\n" + "\n".join(f"- `{f}`" for f in missing_files))
     st.info(
-        "Run `download_etf_data_yahoofinance.py` first to download the data, "
+        "Use the sidebar **📥 Get Data** panel to download them, "
         "then point the **CSV folder path** to the output folder."
     )
     st.stop()

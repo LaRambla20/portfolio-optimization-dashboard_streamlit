@@ -24,7 +24,7 @@ python3 -m venv .venv
 .venv/bin/streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
-**Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download Data" panel.
+**Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, BTC-EUR, ZPRV.DE (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar **📥 Get Data** panel.
 
 ## Testing
 
@@ -42,7 +42,23 @@ Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all
 
 > **Gotcha:** the test's "done" signal is `st.success(" Analysis complete!")`, rendered **last** in `efficient_frontier_app.py` after the final section. Remove or relocate it (e.g. when merging/reordering sections) and `test_dashboard.py` hangs 180s then fails on `wait_for_selector("text=Analysis complete")` — keep it as the final render. The test's `SECTIONS` list must also match the rendered `st.header` strings exactly (incl. the section count).
 
-**Unit tests (no running app, no network needed) — all live in `tests/`:** `.venv/bin/python tests/test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip, `convert_series_to_eur` alignment, and the `currency` column being appended last and the price reader ignoring it; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv/bin/python tests/test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity). `.venv/bin/python tests/test_aftertax.py` covers `rebalanced_value_aftertax` (the §6 capital-gains-tax overlay: `tax_rate=0` reproduces `rebalanced_value_series` exactly and `netliq==with_tax`; `netliq ≤ with_tax ≤ no-tax` monotonicity; single-asset pays only final-liquidation tax; within-period loss-netting beats taxing gross gains). `.venv/bin/python tests/test_real_terms.py` covers `real_deflator`/`to_real` (0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns). `.venv/bin/python tests/test_lookback_windows.py` covers the §2 per-asset look-back machinery — `evaluate_simple_return`/`evaluate_CAGR` empty/zero-span guards, `load_asset_series` (own-history + `usecols` ignores `_EXT`/currency extras), `_lookback_year_windows` (drops windows longer than history, keeps fitting ones + a true `Full` row), `_full_history_label` (formatting + 12-month rollover). `.venv/bin/python tests/test_geometric_return.py` covers `_geometric_annual_return` (zero-vol → geo above arithmetic via intra-period compounding; high-vol → geo below by ≈σ²/2 drag; NaN guards). `.venv/bin/python tests/test_extend_wizard.py` covers the guided wizard's pure helpers (`suggest_fx_ticker` incl. the EUR/USD divisor direction and same-currency `None`, `index_query_from_name`'s issuer/wrapper stripping, `default_q_regime`'s classification, and `q_hat_verdict` across **both** bands — the 11 real measured pairings are asserted directly, plus that a regime-less call still behaves as the original 0–6% gate). `.venv/bin/python tests/test_optimizers.py` covers the §7/§8 SLSQP frontier solvers (all six delegate to the shared `_optimize` helper) — weights stay on the long-only simplex, min-vol is the volatility floor, `efficient_return`/`efficient_volatility` hit their targets exactly, and max-Sortino beats equal-weight.
+**Unit tests (no running app, no network needed) — all live in `tests/`.** Run one with
+`.venv/bin/python tests/test_X.py`, or all of them:
+
+```bash
+for t in tests/test_*.py; do [ "$t" = tests/test_dashboard.py ] || .venv/bin/python "$t"; done
+```
+
+| Test | Covers |
+|---|---|
+| `test_total_return_synthesis.py` | Total-return reconstruction math: yield recovery, splice continuity, FX caveat, CSV save/read round-trip, `convert_series_to_eur` alignment, and the `currency` column being appended last and the price reader ignoring it. Plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline. |
+| `test_rebalancing.py` | `rebalanced_value_series` — Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity. |
+| `test_aftertax.py` | `rebalanced_value_aftertax` (the §6 capital-gains-tax overlay): `tax_rate=0` reproduces `rebalanced_value_series` exactly and `netliq==with_tax`; `netliq ≤ with_tax ≤ no-tax` monotonicity; single-asset pays only final-liquidation tax; within-period loss-netting beats taxing gross gains. |
+| `test_real_terms.py` | `real_deflator`/`to_real` — 0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns. |
+| `test_lookback_windows.py` | §2 per-asset look-back machinery — `evaluate_simple_return`/`evaluate_CAGR` empty/zero-span guards, `load_asset_series` (own-history + `usecols` ignores `_EXT`/currency extras), `_lookback_year_windows` (drops windows longer than history, keeps fitting ones + a true `Full` row), `_full_history_label` (formatting + 12-month rollover). |
+| `test_geometric_return.py` | `_geometric_annual_return` — zero-vol → geo above arithmetic via intra-period compounding; high-vol → geo below by ≈σ²/2 drag; NaN guards. |
+| `test_extend_wizard.py` | The guided wizard's pure helpers — `suggest_fx_ticker` incl. the EUR/USD divisor direction and same-currency `None`, `index_query_from_name`'s issuer/wrapper stripping, `default_q_regime`'s classification, and `q_hat_verdict` across **both** bands (the 11 real measured pairings are asserted directly, plus that a regime-less call still behaves as the original 0–6% gate). |
+| `test_optimizers.py` | The §7/§8 SLSQP frontier solvers (all six delegate to the shared `_optimize` helper) — weights stay on the long-only simplex, min-vol is the volatility floor, `efficient_return`/`efficient_volatility` hit their targets exactly, and max-Sortino beats equal-weight. |
 
 > **Adding a unit test:** put it in `tests/`. Plain assert-based script — anchor the import path to the file (`sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))`, so it runs from any CWD), functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv/bin/python tests/test_X.py`.
 
@@ -56,7 +72,14 @@ sleep 8; grep -q "Uvicorn server started" /tmp/boot.log && echo BOUND || cat /tm
 ```
 > **A `LISTEN` row on 8501 is not proof of a good boot.** If an older process still holds the port, the new one logs `Port 8501 is not available` — which a `grep -Ei 'error|traceback'` does **not** match — and the stale process keeps serving old code. `Uvicorn server started` in the **new** process's log is the only reliable signal.
 
-> **Stop it by PID.** `pkill -f "streamlit run …"` also matches the shell running the pkill and kills it (exit 144 — and any heredoc in that same command is silently never written): `kill $(pgrep -f "streamlit run efficient_frontier_app" | head -1)`.
+> **Stopping it kills your own shell unless you bracket the pattern.** `pkill -f "streamlit run …"`
+> matches the shell running the pkill and kills it (exit 144 — and any heredoc in that same command is
+> silently never written). Two rules, both needed:
+> 1. Bracket the first letter so the pattern can't match itself: `pkill -f "[s]treamlit run effici"`.
+> 2. **Never put the kill and the relaunch in the same command.** The bracket trick doesn't save you
+>    there — the `nohup .venv/bin/streamlit run efficient_frontier_app…` line later in the *same*
+>    command line is an unbracketed match, so pkill still finds and kills the shell. Kill in one call,
+>    launch in the next. (`| head -1` doesn't help either: pgrep can list the shell first.)
 
 > **Driving `build_merged_dataframe` offline:** it filters `date <= filter_date_string`, so passing `None` raises `TypeError: Invalid comparison between datetime64 and NoneType`. Pass a real date string (e.g. a far-future `"2100-01-01"` to keep all rows) when calling it outside the app for a smoke test.
 
@@ -301,6 +324,10 @@ Add the new `{ETF}_EXT` ticker to **My Portfolio** to analyze it. §1 shows a �
 CSV files in `individual_indices_data/` named `{ticker}_data_{period}.csv` (period: daily/weekly/monthly) with columns: `date`, `adj close`.
 
 **Reconstructed (total-return) files** — `{ETF}_EXT_data_{period}.csv` — carry two extra columns: `synthetic` (bool: `True` for rows reconstructed from the index *before* the ETF's first date, `False` for real ETF rows) and `recon_yield` (the calibrated annual gross-up `q_hat`, filled only on synthetic rows), plus a `currency` column appended **last**. Files downloaded by `run_download` also carry a `currency` column (see **Currency handling**). Every price reader passes `usecols=["date", "adj close"]`, so column order on disk doesn't matter and the extras are ignored — only `read_synthetic_info` (§1 badge) and `read_currency_info` (§1 currency check) read them. See **Total-return reconstruction** and **Currency handling** below.
+
+> **`_EXT` files are gitignored** (`individual_indices_data/*_EXT_data_*.csv`), as are `^`-prefixed
+> index downloads. Only the plain ETF sample CSVs are tracked — a fresh clone has no reconstructed
+> series, so re-run the wizard to get one. Local `_EXT` files in your tree never show up in a diff.
 
 ### VaR / CVaR Gotchas
 
