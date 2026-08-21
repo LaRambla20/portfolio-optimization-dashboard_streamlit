@@ -4,20 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-> **On Linux? See [LINUX.md](LINUX.md).** The commands below are Windows-only (`.venv\Scripts\…`, PowerShell, corporate-SSL workarounds). `LINUX.md` has the equivalents; everything outside this *Commands*/*Testing*/*Git* command syntax applies to both.
+> Commands below are **Linux/macOS**. On Windows see **[WINDOWS.md](WINDOWS.md)** — `.venv\Scripts\…` paths, PowerShell boot-checks and the corporate-SSL workarounds. Everything outside this *Commands*/*Testing*/*Git* syntax applies to both.
 
 - **No build system or linter.** A Playwright end-to-end test exists — see **Testing**.
 
 **Setup (first time):**
 ```bash
-python -m venv .venv
-.venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org streamlit pandas numpy scipy matplotlib seaborn yfinance
+python3 -m venv .venv
+.venv/bin/pip install streamlit pandas numpy scipy matplotlib seaborn yfinance playwright
+.venv/bin/playwright install chromium      # ~115 MB, only on a fresh clone
 ```
-> Note: `--trusted-host` flags are needed on Windows machines with corporate/root SSL cert issues.
+> **Debian/Ubuntu ship `ensurepip` separately**, so a bare `python3 -m venv .venv` dies with
+> `ModuleNotFoundError: No module named 'ensurepip'`. Either `sudo apt install python3-venv`, or
+> build it pip-less and bootstrap: `python3 -m venv --without-pip .venv` then
+> `curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python -`.
 
 **Run app:**
 ```bash
-.venv\Scripts\streamlit run efficient_frontier_app/efficient_frontier_app.py
+.venv/bin/streamlit run efficient_frontier_app/efficient_frontier_app.py
 ```
 
 **Workflow:** Pre-loaded CSVs for EM57.MI, VWCE.MI, SGLD.MI, IMIE.MI, DBMF, BTC-EUR (daily + monthly) are included in `individual_indices_data/` — click **Run Analysis** immediately. To add or refresh tickers, use the sidebar "Download Data" panel.
@@ -27,47 +31,41 @@ python -m venv .venv
 **Requires the app to be running first** (`Run app` command above), then:
 
 ```bash
-.venv\Scripts\python tests\test_dashboard.py
+HEADLESS=1 .venv/bin/python tests/test_dashboard.py
 ```
 
-For automated/non-interactive runs use `HEADLESS=1 .venv\Scripts\python tests\test_dashboard.py` (plain `headless=False` hangs when not driven by a human).
+`HEADLESS=1` is effectively mandatory on Linux — `headless=False` needs an X/Wayland display and hangs without one.
 
-> **Gotcha:** Streamlit caches imported modules in memory, so a still-running `streamlit.exe` serves **stale code** after you edit `ui_components.py`/etc. After edits, kill all `streamlit.exe`, confirm port 8501 has no LISTENING socket, then restart before re-testing.
+> **Gotcha:** Streamlit caches imported modules in memory, so a still-running server serves **stale code** after you edit `ui_components.py`/etc. After edits, kill it and restart before re-testing — and verify the restart actually bound (see *Boot-check*), because a stale process holding the port makes a failed restart look successful.
 
 Playwright drives a real Chromium browser, clicks Run Analysis, and verifies all 8 section headers render plus portfolio card metrics. Screenshots are saved to `test_screenshots/` (gitignored).
 
 > **Gotcha:** the test's "done" signal is `st.success(" Analysis complete!")`, rendered **last** in `efficient_frontier_app.py` after the final section. Remove or relocate it (e.g. when merging/reordering sections) and `test_dashboard.py` hangs 180s then fails on `wait_for_selector("text=Analysis complete")` — keep it as the final render. The test's `SECTIONS` list must also match the rendered `st.header` strings exactly (incl. the section count).
 
-**Unit tests (no running app, no network needed) — all live in `tests/`:** `.venv\Scripts\python tests\test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip, `convert_series_to_eur` alignment, and the `currency` column being appended last so the 2-column reader still works; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv\Scripts\python tests\test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity). `.venv\Scripts\python tests\test_aftertax.py` covers `rebalanced_value_aftertax` (the §6 capital-gains-tax overlay: `tax_rate=0` reproduces `rebalanced_value_series` exactly and `netliq==with_tax`; `netliq ≤ with_tax ≤ no-tax` monotonicity; single-asset pays only final-liquidation tax; within-period loss-netting beats taxing gross gains). `.venv\Scripts\python tests\test_real_terms.py` covers `real_deflator`/`to_real` (0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns). `.venv\Scripts\python tests\test_lookback_windows.py` covers the §2 per-asset look-back machinery — `evaluate_simple_return`/`evaluate_CAGR` empty/zero-span guards, `load_asset_series` (own-history + `usecols` ignores `_EXT`/currency extras), `_lookback_year_windows` (drops windows longer than history, keeps fitting ones + a true `Full` row), `_full_history_label` (formatting + 12-month rollover). `.venv\Scripts\python tests\test_geometric_return.py` covers `_geometric_annual_return` (zero-vol → geo above arithmetic via intra-period compounding; high-vol → geo below by ≈σ²/2 drag; NaN guards). `.venv\Scripts\python tests\test_optimizers.py` covers the §7/§8 SLSQP frontier solvers (all six delegate to the shared `_optimize` helper) — weights stay on the long-only simplex, min-vol is the volatility floor, `efficient_return`/`efficient_volatility` hit their targets exactly, and max-Sortino beats equal-weight.
+**Unit tests (no running app, no network needed) — all live in `tests/`:** `.venv/bin/python tests/test_total_return_synthesis.py` covers the total-return reconstruction math (yield recovery, splice continuity, FX caveat, CSV save/read round-trip, `convert_series_to_eur` alignment, and the `currency` column being appended last so the 2-column reader still works; plus one live `^GSPC` vs `^SP500TR` check that SKIPs gracefully offline). `.venv/bin/python tests/test_rebalancing.py` covers `rebalanced_value_series` (Never == buy-and-hold, Every-period == constant-weight compounded, periodic-reset continuity). `.venv/bin/python tests/test_aftertax.py` covers `rebalanced_value_aftertax` (the §6 capital-gains-tax overlay: `tax_rate=0` reproduces `rebalanced_value_series` exactly and `netliq==with_tax`; `netliq ≤ with_tax ≤ no-tax` monotonicity; single-asset pays only final-liquidation tax; within-period loss-netting beats taxing gross gains). `.venv/bin/python tests/test_real_terms.py` covers `real_deflator`/`to_real` (0%/yr is an exact no-op, constant-rate deflation shifts the mean by ~π but leaves volatility ~unchanged, and deepens drawdowns). `.venv/bin/python tests/test_lookback_windows.py` covers the §2 per-asset look-back machinery — `evaluate_simple_return`/`evaluate_CAGR` empty/zero-span guards, `load_asset_series` (own-history + `usecols` ignores `_EXT`/currency extras), `_lookback_year_windows` (drops windows longer than history, keeps fitting ones + a true `Full` row), `_full_history_label` (formatting + 12-month rollover). `.venv/bin/python tests/test_geometric_return.py` covers `_geometric_annual_return` (zero-vol → geo above arithmetic via intra-period compounding; high-vol → geo below by ≈σ²/2 drag; NaN guards). `.venv/bin/python tests/test_extend_wizard.py` covers the guided wizard's pure helpers (`suggest_fx_ticker` incl. the EUR/USD divisor direction and same-currency `None`, `index_query_from_name`'s issuer/wrapper stripping, `default_q_regime`'s classification, and `q_hat_verdict` across **both** bands — the 11 real measured pairings are asserted directly, plus that a regime-less call still behaves as the original 0–6% gate). `.venv/bin/python tests/test_optimizers.py` covers the §7/§8 SLSQP frontier solvers (all six delegate to the shared `_optimize` helper) — weights stay on the long-only simplex, min-vol is the volatility floor, `efficient_return`/`efficient_volatility` hit their targets exactly, and max-Sortino beats equal-weight.
 
-> **Adding a unit test:** put it in `tests/`. Plain assert-based script — anchor the import path to the file (`sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))`, so it runs from any CWD), functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv\Scripts\python tests\test_X.py`.
+> **Adding a unit test:** put it in `tests/`. Plain assert-based script — anchor the import path to the file (`sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "efficient_frontier_app"))`, so it runs from any CWD), functions that `assert` and `print("... OK")`, driven by an `if __name__ == "__main__"` runner. No pytest. Run with `.venv/bin/python tests/test_X.py`.
 
-> **yfinance SSL gotcha:** yfinance uses `curl_cffi`, so the pip `--trusted-host` and git `schannel` workarounds do **not** apply to it. The app's `run_download`/`run_total_return_reconstruction` use a bare `yf.Ticker` (fine on the real machine). To drive yfinance for local validation on an SSL-intercepting machine, pass a relaxed session: `yf.Ticker(sym, session=curl_cffi.requests.Session(impersonate="chrome", verify=False))`.
+> **yfinance uses `curl_cffi`, not `requests`** — so pip/git SSL workarounds never apply to it. A bare `yf.Ticker` works here; on an SSL-intercepting machine see [WINDOWS.md](WINDOWS.md).
 
-**Boot-check (fast path):** for sidebar-only / non-render changes, launch the app headless and grep the boot log for `error|traceback` instead of the full Playwright run — e.g. `streamlit run ... --server.headless true > boot.log 2>&1 &` then inspect `boot.log`.
+**Boot-check (fast path):** for sidebar-only / non-render changes, launch headless and read the log instead of running Playwright:
+```bash
+nohup .venv/bin/streamlit run efficient_frontier_app/efficient_frontier_app.py \
+  --server.headless true > /tmp/boot.log 2>&1 &
+sleep 8; grep -q "Uvicorn server started" /tmp/boot.log && echo BOUND || cat /tmp/boot.log
+```
+> **A `LISTEN` row on 8501 is not proof of a good boot.** If an older process still holds the port, the new one logs `Port 8501 is not available` — which a `grep -Ei 'error|traceback'` does **not** match — and the stale process keeps serving old code. `Uvicorn server started` in the **new** process's log is the only reliable signal.
+
+> **Stop it by PID.** `pkill -f "streamlit run …"` also matches the shell running the pkill and kills it (exit 144 — and any heredoc in that same command is silently never written): `kill $(pgrep -f "streamlit run efficient_frontier_app" | head -1)`.
 
 > **Driving `build_merged_dataframe` offline:** it filters `date <= filter_date_string`, so passing `None` raises `TypeError: Invalid comparison between datetime64 and NoneType`. Pass a real date string (e.g. a far-future `"2100-01-01"` to keep all rows) when calling it outside the app for a smoke test.
-
-> **PowerShell boot-check caveat:** that bash redirection misleads on PowerShell — Streamlit's normal Uvicorn startup line surfaces in the log as a `NativeCommandError`/`RemoteException` (not a real error), `boot.log` is written UTF-16 (garbles grep), and a background run reports **exit 255** when force-killed (also not a failure). Treat **port 8501 LISTENING** as the success signal, not a clean log. Stop the app with `Get-Process streamlit | Stop-Process -Force` and confirm the port is freed.
-
-> **Clean PowerShell boot-check:** `Start-Process .venv\Scripts\streamlit.exe -ArgumentList 'run','efficient_frontier_app/efficient_frontier_app.py','--server.headless','true' -WindowStyle Hidden`, then poll `Get-NetTCPConnection -LocalPort 8501 -State Listen` in a short loop (a returned row = booted). Avoids the log-file garbling entirely.
-
-**Install Playwright** (already in venv; only needed once on a fresh clone):
-```bash
-.venv\Scripts\pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org playwright
-# Chromium download requires disabling Node SSL verification on this machine:
-$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"; .venv\Scripts\playwright install chromium
-```
 
 ## Git
 
 Remote: https://github.com/LaRambla20/portfolio-optimization-dashboard_streamlit.git
 Default branch: `master`
 
-**Push requires Windows native cert store** (same SSL issue as pip):
-```bash
-git -c http.sslBackend=schannel push
-```
+Plain `git push` works here. On Windows the corporate cert store is needed — see [WINDOWS.md](WINDOWS.md).
 
 ## Architecture
 
@@ -132,15 +130,17 @@ inside it. Both jobs download from Yahoo on their own — nothing has to be down
 `st.radio` picks between them, rendering only that job's inputs:
 
 - `Download ETF's price history as is` → a `text_area` of tickers → `run_download`
-- `Download & extend ETF's price history` → a 3-column `data_editor` (index / ETF / FX) → `run_total_return_reconstruction`
+- `Download & extend ETF's price history` → **"🧬 Start guided setup"** → the guided wizard below
+  (the old 3-column `data_editor` is gone; the wizard handles one fund at a time)
 
 The two radio labels are module constants (`DL_MODE_PLAIN` / `DL_MODE_EXTEND`) so the branch checks
 can't drift from the displayed strings.
 
 **No autofill, by explicit user request** — retyping over pre-filled examples every time was the
-complaint. Examples live where they cost nothing to dismiss: the ticker box uses `placeholder=`
-(greyed, never submitted) and the extend table puts them in `column_config` `help=` tooltips plus a
-caption. **Do not "helpfully" re-add default values to either input.**
+complaint. Examples live where they cost nothing to dismiss: `placeholder=` (greyed, never submitted)
+on every ticker input. **Do not "helpfully" re-add default values.** A *computed* suggestion is the
+exception (the wizard's "Use this" / "Use EURUSD=X" buttons) — it fills the field on click, so there
+is still nothing to erase.
 
 Shared below the branch: one *Intervals to fetch* `multiselect` defaulting to `[data_period]`, and a
 live `st.warning` when `data_period not in dl_intervals` — the default only binds on first render, so
@@ -159,6 +159,113 @@ jumped to 100% — the prefixes are now required, don't drop them. `cell_text()`
 cells (a fresh row yields `None`, and `str(None)` is the truthy `"None"` — that's why it isn't a plain
 `str()`).
 
+### Guided extend wizard (§ Get Data → modal dialog)
+
+The *Download & extend* mode opens a four-step `st.dialog` (`render_extend_wizard` in
+`ui_components.py`) instead of a job table: **Fund → Index → Currency → Confirm**. Each step probes
+Yahoo and only enables **Continue** once its gate passes, so a dead ticker is caught before any run.
+
+| Step | Gate |
+|---|---|
+| 1 · Fund | `probe_ticker` returns `ok` (real downloadable history) |
+| 2 · Index | `ok`, **>=2 overlapping dates** with the fund, and the index **starts before** the fund. Also *previews* q̂ per candidate |
+| 3 · Currency | radio: *choose a pair* (pre-filled with the derived pair) vs *proceed without* — the latter auto-selected when both currencies match |
+| 3 · Currency | `ok`; auto-skipped when both currencies match; **warns** when the FX series starts *after* the index |
+| 4 · Confirm | `q_hat_verdict(q, regime)` — q̂ inside the band for the chosen regime — else **Reconstruct stays disabled** |
+
+**Two bands, because "how big should the gap be" depends on the pairing** (`Q_BANDS`):
+
+| Regime | Band | When |
+|---|---|---|
+| `price_index` | 0% … +6% | index is price-only, fund collects the dividends → gap *is* the yield |
+| `same_income` | −0.5% … +0.5% | index already carries the income, or the asset has none (gold) → only fees separate them |
+
+A single 0–6% band **rejected correct pairings**: `GC=F`→`SGLD.MI` recovers **−0.24%/yr** (gold pays
+nothing; that's SGLD's fee) and was blocked. `default_q_regime(index_probe)` picks the band from the
+*index* leg — pays dividends → `same_income`; FUTURE/CURRENCY → `same_income`; INDEX without
+dividends → `price_index`; anything else (a fund used as the index, whose Adj Close is total-return)
+→ `same_income`. Validated on 11 real pairings: all 6 good pass, all 5 bad block.
+
+**The fund leg cannot decide this** — an accumulating equity fund and a gold ETC both report
+`Dividends = 0`. Hence the step-4 override radio; never make the regime purely automatic.
+
+**Accumulating vs distributing changes nothing here.** The app reads **Adj Close**, which adds
+distributions back, so a distributing fund is already total-return (measured: `Adj Close/Close`
+falls to ~0.78 for VT, stays exactly 1.0000 for accumulating funds and no-income assets). It is
+*displayed* per leg because it explains the classification, not because it gates.
+
+**`run_total_return_reconstruction`'s log warning uses the same `q_hat_verdict`**, with `regime`
+carried on the job dict. It previously hard-coded 0–6% and so announced "outside the usual 0–4%
+dividend band" immediately after the wizard had passed the very same gold pairing. Keep them on one
+helper or they will disagree again.
+
+**q̂ is the only gate; correlation was deliberately rejected.** Measured: the correct pairing
+`^GSPC`→`SXR8.DE` correlates **0.74**, while the nonsensical `^GSPC`→`VWCE.MI` correlates **0.89** —
+*higher*. All broad equity indices correlate ~0.85+, and cross-currency pairs are penalised by FX
+noise, so correlation ranks a bad pair above a good one. q̂ separates them (that bad pair recovers a
+**negative** yield). Don't reintroduce a correlation check; it looks meaningful and isn't.
+
+**Step 2 previews q̂ for every candidate** via `preview_candidate_fit`, so you pick the best index
+up front instead of discovering at step 4 that it fails. Nearly free — probing already cached each
+candidate's series, so all six previews take ~0.35 s of pure pandas.
+
+**The preview must use an auto-derived FX pair**, because the user hasn't chosen one yet and q̂
+*without* conversion is badly wrong: a JPY-quoted gold ETF reads **−1.75%/yr** unconverted versus
+**+0.14%** converted — the difference between "rejected" and "fine". Each row therefore names the
+pair it used (`via EURUSD=X`), and step 3 pre-fills that same pair so the number the user saw is the
+number that gets used. Rows are ranked plausible-first, and candidates that **start after the fund**
+are demoted with a reason — that is what makes EM57.MI read as "nothing here extends this" at a
+glance instead of four separate checks.
+
+**Index suggestions are probed, never trusted.** `suggest_index_candidates` merges
+`CURATED_INDEX_HINTS` with `yf.Search`, then runs **every** candidate — from both sources — through
+`probe_ticker`, listing them OK/BAD with spans. It accepts `SEARCH_QUOTE_TYPES` =
+INDEX/ETF/FUTURE/CURRENCY/MUTUALFUND — **`FUTURE` is what makes `GC=F` (gold, back to 2000) reachable
+at all**, and `EQUITY` is excluded because it floods the list with individual stocks. The fund's own
+symbol is filtered out (searching a fund's name returns the fund).
+
+**Query order in `_search_queries` is load-bearing, not cosmetic**: `"Gold index"` returns S&P/TSX
+*Global Gold* — gold **miners**, a different asset from bullion — while plain `"Gold"` returns
+`GC=F`. So the full cleaned name is tried first and leading words are dropped only as a fallback,
+stopping at the first query that yields candidates. The curated map exists because Search alone returns
+only quote-only `*.FGI` tickers for the common European ETFs (searching "FTSE All-World" puts the
+history-less `AW01.FGI` first). Because hints are probed like everything else, a stale entry shows as
+BAD rather than misleading. Search finding nothing is fine — the step falls back to manual entry.
+
+`suggest_fx_ticker(etf_ccy, index_ccy)` → `{etf}{index}=X`. **Direction is load-bearing**:
+`synthesize_total_return` divides (`index / fx`) and Yahoo quotes `ABCDEF=X` as DEF per 1 ABC, so an
+EUR fund with a USD index needs `EURUSD=X`. Reversing it silently inverts the conversion.
+
+**Streamlit constraints (verified in 1.62 — violating these breaks the wizard):**
+- `st.dialog` is a **fragment**: widgets inside rerun only the dialog. Use `st.rerun(scope="fragment")`
+  to step, and `st.rerun(scope="app")` to close it.
+- **`st.sidebar` cannot be called inside a dialog.** Config is snapshotted into
+  `st.session_state["wiz_cfg"]` when the wizard opens.
+- **Elements created outside the dialog are additive across its reruns.** The reconstruction therefore
+  queues into `session_state["recon_job"]` and is run by the *main script* via `run_job_with_progress`
+  — never draw the progress UI from inside the modal.
+- **Dismissing with the ✕ does *not* clear your own open-flag.** The close is client-side only, so
+  `wiz_open` stays True and the **next full script rerun** — editing the My Portfolio table, nudging
+  any sidebar widget — re-renders the dialog and it pops back up unwanted. `on_dismiss=wiz_dismissed`
+  is the only hook that fires on the ✕; without it the wizard is unclosable in practice. Any future
+  `st.dialog` gated on a session_state flag needs the same callback.
+- **A keyed widget ignores its `value=` argument on every rerun after the first.** The "Use this" /
+  "Use EURUSD=X" buttons must write `st.session_state["wiz_idx_in"]` / `["wiz_fx_in"]` directly;
+  passing `value=` does nothing (this was a real bug — the buttons silently failed to fill the field).
+  `_wiz_seed` seeds each input once; `wiz_reset()` clears the state dict **and** the widget keys,
+  which outlive it.
+- **A new index leg invalidates the suggested rate and the detected regime.** `Check index` clears
+  `wiz_fx_in` / `wiz_fx_mode` / `wiz_regime_in` — the suggested pair depends on the *index's*
+  currency, so a stale one silently converts with the wrong rate.
+- **`st.metric(delta=…)` draws a direction arrow.** A non-numeric label ("implausible") always renders
+  an *up* arrow, which reads as good next to a negative yield — the q̂ metric passes no `delta`.
+
+**Not every fund can be extended, and no search change fixes that.** EM57.MI (Amundi Euro Govt Bond
+5-7Y) starts 2008-01 and *every* EUR government-bond series on Yahoo starts 2008-01 or later
+(`EXHC.DE`, `EXHB.DE`, `IBGL.AS`, `IBGX.AS`, `IBCI.DE`, `EUNH.DE`, `X03G.DE` all checked). The step-2
+"index must start before the fund" gate reports this correctly. Extending it needs a different data
+provider, not a wider search.
+
 ### Currency handling (single base currency = EUR)
 
 **The app does no FX conversion anywhere except where noted here — every `adj close` is assumed already in EUR** (price-chart axes are hard-labeled `[EUR]`, portfolio weights derive from EUR market values). Feeding in a USD/GBP-priced series silently treats those prices as EUR, so its returns/vol and especially **correlations** (every same-currency asset shares a hidden FX factor) come out in the wrong numeraire, biasing the covariance matrix → frontier and VaR. No error is raised. Verified live: US-listed `IVV` shows 14.57%/yr in USD but 13.99%/yr once converted to EUR (matching the EUR-listed `SXR8.DE` at 13.84%).
@@ -168,6 +275,14 @@ Two guards:
 - **§1 currency check** (`read_currency_info` → `render_load_etf_data`): warns if any loaded series isn't EUR. Every download writes a `currency` column (the stored currency: `EUR` when native or converted, else e.g. `USD`), so the check is offline; legacy CSVs lacking the column fall back to a cached network sniff.
 
 The on-disk `currency` column is a constant per file and, like the reconstruction tag columns, is ignored by the 2-column/`usecols` readers.
+
+> **A mid-month download leaves a partial last bar.** A monthly fetch on the 21st writes that month's
+> *running* value — often equal to the prior month's close, which reads as a stale duplicate row. It
+> settles at month end; don't treat it as a closed month or "correct" it.
+
+> **Yahoo revises history between downloads.** Two fetches minutes apart are identical; hours apart can
+> differ by ~1e-7 relative. Before suspecting a code change, run **both code paths against one fetch** —
+> that isolates upstream drift from a real behaviour change.
 
 ### Total-return reconstruction (extending ETFs with index history)
 
@@ -203,11 +318,12 @@ When you change *how* a metric is computed, update its matching entry in `descri
 
 ### Rendering gotchas (silent failures — verify in a browser, not just the source)
 
-Requires **Streamlit ≥ 1.50** (uses `width="stretch"`; developed against 1.58).
+Requires **Streamlit ≥ 1.50** (uses `width="stretch"`). Last verified end-to-end on Python 3.14.4 · streamlit 1.62 · pandas 3.0.5 · numpy 2.5.2 · scipy 1.18 · yfinance 1.6 · playwright 1.62. **pandas 3.x** is a major bump past the 2.x this was written against — everything passes today, but it is the first suspect for an unexplained data-shaped failure.
 
 - **`st.data_editor` with `key=`: never reassign its returned frame back into the session_state variable you pass as its input.** The "My Portfolio" editor seeds `st.session_state.portfolio_df` *once*; the widget then persists edits as a diff against that stable seed. Writing the returned (edited) frame back moves the baseline underneath the widget, dropping the pending value of a freshly-added row until it's typed twice. Read current state from the editor's *return value* (`edited_portfolio`), not the session_state key.
 - **`st.data_editor` newly-added rows yield `None`/`NaN` cells.** A row where the user typed a ticker but not yet a Market Value comes through with value `None`; coerce (`0.0 if v is None or pd.isna(v) else float(v)`) before `sum()`/division, or it raises `TypeError: float + NoneType`.
-- **`st.data_editor` renders its grid to a `<canvas>` (glide-data-grid), so cell and column text is *not* in the DOM.** Playwright assertions like `"Index" in inner_text()` always fail, and synthetic clicks/keystrokes do not reliably enter a cell's edit mode (Streamlit's own `AppTest` has no `data_editor` driver either). Assert on ARIA instead — `aria-colcount` and `aria-rowcount` on `[role='grid']`; an empty `num_rows="dynamic"` editor reads `aria-rowcount="2"` (header + blank add-row). To verify parsing end-to-end, drive the *plain-download* branch (a real `<textarea>`) or call the backend directly.
+- **`st.data_editor` renders its grid to a `<canvas>` (glide-data-grid), so cell and column text is *not* in the DOM.** Playwright assertions like `"Index" in inner_text()` always fail, and synthetic clicks/keystrokes do not reliably enter a cell's edit mode (Streamlit's own `AppTest` has no `data_editor` driver either). Assert on ARIA instead — `aria-colcount`/`aria-rowcount` on `[role='grid']`. The **My Portfolio** editor is still one of these; the extend wizard replaced its table with text inputs precisely because those *are* drivable.
+- **Streamlit reruns shift the layout, so cached click coordinates go stale.** Measuring an element's position while a `st.spinner` is showing and clicking after it clears lands on the wrong element (a silent no-op, not an error). Re-screenshot or re-measure immediately before clicking.
 - **Inline SVG (the data-availability gauge in `render_load_etf_data`) must use `st.markdown(html, unsafe_allow_html=True)`.** Do **not** use `st.html` — it runs input through DOMPurify (default config), which strips `<svg>` entirely, so the gauge renders as *nothing* with no error. `st.components.v1.html` (the old approach the gauge was migrated off of) is no longer used here, and that Streamlit API was itself removed after 2026-06-01 — don't reintroduce it. `st.iframe` only embeds a URL, not an HTML/SVG string. After any change here, confirm the SVG is actually in the DOM (e.g. Playwright `svg:has(linearGradient#gaugeGrad)`); the deprecation-warning-gone check alone is not enough.
 - **KaTeX `$$…$$` blocks in `descriptions.py` must sit on a single source line.** A hard line break inside the block makes Streamlit's markdown treat it as a paragraph break, splitting the delimiters so the formula fails to parse (renders as raw red error text). The test's gauge check locates the inline SVG (not an iframe) for this reason. **Static pre-check:** scan for any source line with an odd count of `$$` — a balanced display block has two per line, so an odd count flags a split block (`python -c "import re;[print(i) for i,l in enumerate(open('efficient_frontier_app/descriptions.py',encoding='utf-8'),1) if l.count('\$\$')%2]"`). **Browser check:** expand every "📖 How to read this section" panel and assert the DOM has `>0` `.katex` nodes, **zero** `.katex-error` nodes, and **zero** stray `$$` in `document.body.innerText` (a broken block leaves the unparsed LaTeX as visible text). The static scan catches the common case offline; the browser check is the ground truth.
 
