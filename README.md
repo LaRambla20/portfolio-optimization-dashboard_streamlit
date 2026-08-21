@@ -4,6 +4,8 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 
 ![The dashboard after Run Analysis](docs/images/01-overview.jpg)
 
+*Section 1 — Load Data: the data-availability gauge showing each asset's span and the shared window the portfolio sections are built on.*
+
 ## Features
 
 - **Input portfolio analysis** — your allocation held at a **selectable rebalancing cadence** (buy-and-hold by default): allocation pie, cumulative-return chart with per-asset overlays, annotated underwater curve, deepest-drawdown recovery and longest-underwater-stretch durations, headline growth/drawdown metrics (geometric CAGR, annualised return/volatility, Sharpe, Sortino, max drawdown), and a **Tail Risk & Return Distribution** subsection (parametric + historical VaR/CVaR, mean/median/vol/skew/kurtosis, distribution histogram)
@@ -25,20 +27,66 @@ A Streamlit dashboard for **Modern Portfolio Theory** analysis. Load asset price
 
 ## Screenshots
 
-**Section 6 — Input Portfolio Analysis.** Your allocation at the selected rebalancing cadence: cumulative
+Every section, in order. Section 1 is the gauge in the image above.
+
+**2 — Per-Asset Analytics.** Each asset over its *own* full history, so a long-history holding isn't
+truncated to the shortest one. Look-back windows that don't fit the asset's life are omitted rather
+than silently mislabelled, and a true `Full (6y 7m)` row closes the table.
+
+![Per-asset simple returns by look-back period](docs/images/02-per-asset-analytics.png)
+
+**3 — Per-Asset Prices.** Raw and normalized (base = 1000) closing prices over the shared window.
+
+![Normalized closing prices](docs/images/03-per-asset-prices.png)
+
+**4 — Per-Asset Rolling Returns.** Moving-window *cumulative* returns — the whole-window total, not
+annualised, which is why windows of different lengths aren't directly comparable.
+
+![Cumulative 1-year rolling return](docs/images/04-rolling-returns.png)
+
+**5 — Per-Asset Returns & Statistics.** Per-period min/max/mean/median/std per asset; the gap between
+mean and median reads as skew.
+
+![Per-asset return statistics](docs/images/05-returns-statistics.png)
+
+**6 — Input Portfolio Analysis.** Your allocation at the selected rebalancing cadence: cumulative
 return with per-asset overlays, then the underwater curve with the deepest drawdown episode shaded.
 
-![Cumulative return and underwater curve](docs/images/02-portfolio-analysis.jpg)
+![Cumulative return and underwater curve](docs/images/06-portfolio-analysis.jpg)
 
-**Section 6 — Tail Risk & Return Distribution.** The realised return distribution against a fitted normal,
+**6 — Tail Risk & Return Distribution.** The realised return distribution against a fitted normal,
 with the parametric VaR cut marked, above the mean/median/volatility/skew/kurtosis profile.
 
-![Return distribution and per-period profile](docs/images/03-tail-risk.jpg)
+![Return distribution and per-period profile](docs/images/07-tail-risk.jpg)
 
-**Section 8 — Scipy Efficient Frontier.** The SLSQP frontier over the Monte Carlo cloud, coloured by Sharpe
-ratio, with your portfolio and each optimized portfolio marked.
+**7 — Monte Carlo Efficient Frontier.** Random portfolios sampled uniformly on the simplex, coloured
+by Sharpe ratio, with your portfolio and each optimized portfolio marked.
 
-![Efficient frontier with optimized portfolios](docs/images/04-efficient-frontier.jpg)
+![Monte Carlo simulated portfolios](docs/images/08-monte-carlo.png)
+
+**8 — Scipy Efficient Frontier.** The same cloud with the SLSQP frontier solved on top.
+
+![Efficient frontier with optimized portfolios](docs/images/09-efficient-frontier.jpg)
+
+### Getting data in
+
+**Get Data.** One sidebar panel for both jobs — download as is, or download and extend. Both fetch
+from Yahoo, so nothing has to be on disk first. Ticker fields are never pre-filled; the greyed
+examples are placeholders you don't have to erase.
+
+![The Get Data sidebar panel](docs/images/10-get-data-panel.png)
+
+**The guided extend wizard.** Step 1 probes the fund against Yahoo and reports its currency, span and
+income treatment before letting you continue.
+
+![Extend wizard step 1, fund probe](docs/images/11-extend-wizard-fund.png)
+
+Step 2 is where the pairing is actually judged. Every candidate — curated hint or search result — is
+probed for real history *and* fitted against your fund, so you can see up front that `^GSPC` recovers
+a plausible **+0.25%/yr** while `SWPPX` recovers **-1.51%/yr** and is flagged implausible. Candidates
+that start *after* the fund are demoted with the reason, since they have no earlier history to add.
+
+![Extend wizard step 2, index candidates with recovered yields](docs/images/12-extend-wizard-index.png)
 
 ## Setup
 
